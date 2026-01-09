@@ -17,3 +17,20 @@ Supported and planned relay models include:
 
 This separation allows IceSickle to remain offline-first while supporting
 global, censorship-resistant relay paths when required.
+
+### Hybrid Relay Model (Conceptual Comparison to Tor)
+
+IceSickle’s hybrid relay system is conceptually similar to Tor, but operates at a
+different layer and solves a different problem.
+
+Tor is designed to protect **network anonymity** during live communication by
+obscuring routing paths, IP addresses, and timing correlations.
+
+IceSickle’s hybrid relays protect **epistemic anonymity** by obscuring the link
+between an attestation and the device that produced it. Relays batch, delay,
+reorder, and forward already-signed attestations without preserving origin
+metadata.
+
+Unlike Tor, IceSickle does not perform onion routing or interactive traffic
+relay. The goal is not anonymous communication, but **unlinkable evidence
+production** under adversarial observation.
