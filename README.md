@@ -1,4 +1,4 @@
-<<<<<<< HEAD
+
 # IceSickle 🧊
 
 **Hardware-assisted, ephemeral-key attestation device**
