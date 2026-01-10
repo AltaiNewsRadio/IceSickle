@@ -1,0 +1,21 @@
+[build]
+target = "xtensa-esp32s3-espidf"
+
+[target.xtensa-esp32s3-espidf]
+linker = "ldproxy"
+runner = "espflash flash --monitor"
+
+[env]
+MCU = "esp32s3"
+ESP_IDF_VERSION = "v5.2.2"
+ESP_IDF_SDKCONFIG_DEFAULTS = { value = "sdkconfig.defaults", relative = true }
+
+# Workaround for https://github.com/esp-rs/esp-idf-template/issues/174
+ESP_IDF_SYS_ROOT_CRATE = { value = "icesickle", relative = false }
+
+[unstable]
+build-std = ["std", "panic_abort"]
+
+[alias]
+b = "build --release"
+f = "espflash flash --release --monitor"

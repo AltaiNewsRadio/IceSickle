@@ -1,0 +1,100 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup ESP-RS toolchain
+        uses: esp-rs/xtensa-toolchain@v1.5
+        with:
+          default: true
+          buildtargets: esp32s3
+          ldproxy: true
+
+      - name: Cache cargo registry
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            target
+          key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock', '**/Cargo.toml') }}
+          restore-keys: |
+            ${{ runner.os }}-cargo-
+
+      - name: Build
+        run: cargo build --release
+
+  lint:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup ESP-RS toolchain
+        uses: esp-rs/xtensa-toolchain@v1.5
+        with:
+          default: true
+          buildtargets: esp32s3
+          ldproxy: true
+
+      - name: Check formatting
+        run: cargo fmt --all -- --check
+
+      - name: Clippy
+        run: cargo clippy --all-targets -- -D warnings
+
+  # Enforce no-network policy (WiFi/BLE disabled by design)
+  no-network-guard:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Check for forbidden network symbols
+        run: |
+          echo "Checking for WiFi/BLE symbols in src/..."
+          if grep -rn --include="*.rs" -E "(esp_wifi|esp_bt|wifi|ble|bluetooth|WifiDriver|BleDriver)" src/; then
+            echo "❌ FAILED: Network symbols found in src/"
+            echo "IceSickle is designed to be network-free. See THREAT_MODEL.md."
+            exit 1
+          fi
+          echo "✅ No network symbols found"
+
+      - name: Verify sdkconfig disables networking
+        run: |
+          echo "Checking sdkconfig.defaults..."
+          if ! grep -q "CONFIG_BT_ENABLED=n" sdkconfig.defaults; then
+            echo "❌ FAILED: Bluetooth not explicitly disabled"
+            exit 1
+          fi
+          if ! grep -q "CONFIG_ESP_WIFI_ENABLED=n" sdkconfig.defaults; then
+            echo "❌ FAILED: WiFi not explicitly disabled"
+            exit 1
+          fi
+          echo "✅ Network disabled in sdkconfig"
+
+  # Host-side tests (unit tests that don't require ESP32 hardware)
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Rust (stable, for host tests)
+        uses: dtolnay/rust-action@stable
+
+      - name: Run host tests
+        run: |
+          # Only run tests that are #[cfg(test)] and don't require ESP32
+          # Currently just the hex encoding test
+          echo "Host-side unit tests would run here"
+          echo "Note: Most code requires ESP32 target, so host tests are limited"

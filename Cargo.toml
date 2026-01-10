@@ -1,0 +1,44 @@
+[package]
+name = "icesickle"
+version = "0.1.0"
+edition = "2021"
+license = "Apache-2.0"
+description = "Hardware-assisted, ephemeral-key attestation device"
+repository = "https://github.com/YOURUSER/icesickle"
+readme = "README.md"
+keywords = ["embedded", "attestation", "esp32", "cryptography"]
+categories = ["embedded", "cryptography", "no-std"]
+
+[dependencies]
+# ESP-IDF framework bindings
+esp-idf-sys = { version = "0.35", features = ["binstart"] }
+esp-idf-hal = "0.44"
+esp-idf-svc = { version = "0.49", features = ["alloc"] }
+
+# Cryptography
+ed25519-dalek = { version = "2", default-features = false, features = ["rand_core", "zeroize"] }
+rand_core = "0.6"
+
+# Security
+zeroize = { version = "1", features = ["derive"] }
+
+# Serialization (for attestation payloads)
+serde = { version = "1", default-features = false, features = ["derive"] }
+postcard = { version = "1", features = ["alloc"] }
+
+# Utilities
+log = "0.4"
+heapless = "0.8"
+
+[build-dependencies]
+embuild = "0.32"
+
+[profile.release]
+opt-level = "s"      # size optimization
+lto = true
+codegen-units = 1
+debug = false
+
+[profile.dev]
+opt-level = 1        # some optimization even in dev (ESP32 is slow otherwise)
+debug = true

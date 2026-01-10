@@ -1,0 +1,28 @@
+# Build artifacts
+/target/
+/build/
+
+# ESP-IDF
+/managed_components/
+/dependencies.lock
+sdkconfig
+sdkconfig.old
+
+# Rust
+Cargo.lock
+**/*.rs.bk
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+
+# macOS
+.DS_Store
+
+# ESP flash artifacts
+*.bin
+*.elf
+*.map
