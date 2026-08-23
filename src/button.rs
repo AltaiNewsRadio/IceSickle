@@ -8,7 +8,6 @@
 //! GPIO interrupts with light sleep.
 
 use esp_idf_hal::gpio::{Input, PinDriver, Pull};
-use esp_idf_hal::peripheral::Peripheral;
 
 /// Debounce time in milliseconds
 const DEBOUNCE_MS: u32 = 50;
@@ -46,15 +45,13 @@ where
         let current_raw = self.pin.is_low(); // Active low
 
         // Debounce: only register state change after stable period
-        if current_raw != self.last_state {
-            if now.wrapping_sub(self.last_change_ms) >= DEBOUNCE_MS {
-                self.last_state = current_raw;
-                self.last_change_ms = now;
+        if current_raw != self.last_state && now.wrapping_sub(self.last_change_ms) >= DEBOUNCE_MS {
+            self.last_state = current_raw;
+            self.last_change_ms = now;
 
-                // Return true only on press (transition to pressed state)
-                if current_raw {
-                    return Ok(true);
-                }
+            // Return true only on press (transition to pressed state)
+            if current_raw {
+                return Ok(true);
             }
         }
 
@@ -79,6 +76,7 @@ where
     }
 
     /// Check if button is currently pressed (raw, no debounce)
+    #[allow(dead_code)]
     pub fn is_pressed(&self) -> bool {
         self.pin.is_low()
     }

@@ -9,7 +9,8 @@ sdkconfig
 sdkconfig.old
 
 # Rust
-Cargo.lock
+# Cargo.lock IS committed: icesickle is a binary, and pinning the exact
+# dependency set is part of the security posture (see SECURITY.md).
 **/*.rs.bk
 
 # IDE

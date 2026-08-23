@@ -4,7 +4,7 @@ version = "0.1.0"
 edition = "2021"
 license = "Apache-2.0"
 description = "Hardware-assisted, ephemeral-key attestation device"
-repository = "https://github.com/YOURUSER/icesickle"
+repository = "https://github.com/Mezo-oz/IceSickle"
 readme = "README.md"
 keywords = ["embedded", "attestation", "esp32", "cryptography"]
 categories = ["embedded", "cryptography", "no-std"]
@@ -22,11 +22,15 @@ rand_core = "0.6"
 # Security
 zeroize = { version = "1", features = ["derive"] }
 
-# Serialization (for attestation payloads)
-serde = { version = "1", default-features = false, features = ["derive"] }
+# Serialization (for attestation payloads).
+# `std` is required: postcard's Error only implements `std::error::Error` via
+# serde's `ser::StdError` alias, which is the no_std shim unless serde/std is on.
+# Without it, `postcard::to_allocvec(..)?` cannot convert into `anyhow::Error`.
+serde = { version = "1", features = ["derive"] }
 postcard = { version = "1", features = ["alloc"] }
 
 # Utilities
+anyhow = "1"
 log = "0.4"
 heapless = "0.8"
 

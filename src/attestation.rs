@@ -19,7 +19,6 @@ pub enum AttestationEvent {
     /// Physical button press
     ButtonPress { gpio: u8 },
     /// Future: other physical events (switch, sensor threshold, etc.)
-    #[serde(other)]
     Unknown,
 }
 
@@ -119,10 +118,14 @@ impl Attestation {
         self.timestamp_ms
     }
 
+    /// Kept for alternative output backends (USB HID, QR, BLE); unused by the
+    /// serial path, so the binary's dead_code pass would otherwise flag it.
+    #[allow(dead_code)]
     pub fn public_key_bytes(&self) -> &[u8; 32] {
         &self.public_key
     }
 
+    #[allow(dead_code)]
     pub fn signature_bytes(&self) -> &[u8; 64] {
         &self.signature
     }
