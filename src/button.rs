@@ -7,34 +7,30 @@
 //! and determinism. In a power-constrained design, you'd want to use
 //! GPIO interrupts with light sleep.
 
-use esp_idf_hal::gpio::{Input, PinDriver, Pull};
-use esp_idf_hal::peripheral::Peripheral;
+use esp_idf_hal::gpio::{Input, InputPin, PinDriver, Pull};
 
 /// Debounce time in milliseconds
 const DEBOUNCE_MS: u32 = 50;
 
 /// Button state machine
-pub struct Button<'d, P>
-where
-    P: esp_idf_hal::gpio::InputPin,
-{
-    pin: PinDriver<'d, P, Input>,
+///
+/// `PinDriver` is type-erased as of esp-idf-hal 0.46, so the concrete pin type
+/// is absorbed at construction rather than carried as a parameter.
+pub struct Button<'d> {
+    pin: PinDriver<'d, Input>,
     last_state: bool,
     last_change_ms: u32,
 }
 
-impl<'d, P> Button<'d, P>
-where
-    P: esp_idf_hal::gpio::InputPin + esp_idf_hal::gpio::OutputPin,
-{
+impl<'d> Button<'d> {
     /// Create a new button on the given pin
     ///
-    /// Configures the pin with internal pull-up (assuming active-low button)
-    pub fn new(mut pin: PinDriver<'d, P, Input>) -> anyhow::Result<Self> {
-        pin.set_pull(Pull::Up)?;
-
+    /// Configures the pin with internal pull-up (assuming active-low button).
+    /// `set_pull` is private as of esp-idf-hal 0.46; the pull is chosen when the
+    /// driver is created, so the driver is constructed here rather than passed in.
+    pub fn new<T: InputPin + 'd>(pin: T) -> anyhow::Result<Self> {
         Ok(Self {
-            pin,
+            pin: PinDriver::input(pin, Pull::Up)?,
             last_state: false,
             last_change_ms: 0,
         })
@@ -46,15 +42,13 @@ where
         let current_raw = self.pin.is_low(); // Active low
 
         // Debounce: only register state change after stable period
-        if current_raw != self.last_state {
-            if now.wrapping_sub(self.last_change_ms) >= DEBOUNCE_MS {
-                self.last_state = current_raw;
-                self.last_change_ms = now;
+        if current_raw != self.last_state && now.wrapping_sub(self.last_change_ms) >= DEBOUNCE_MS {
+            self.last_state = current_raw;
+            self.last_change_ms = now;
 
-                // Return true only on press (transition to pressed state)
-                if current_raw {
-                    return Ok(true);
-                }
+            // Return true only on press (transition to pressed state)
+            if current_raw {
+                return Ok(true);
             }
         }
 
@@ -79,6 +73,7 @@ where
     }
 
     /// Check if button is currently pressed (raw, no debounce)
+    #[allow(dead_code)]
     pub fn is_pressed(&self) -> bool {
         self.pin.is_low()
     }

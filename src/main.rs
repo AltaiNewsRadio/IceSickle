@@ -12,7 +12,6 @@ mod button;
 mod cooldown;
 mod entropy;
 
-use esp_idf_hal::gpio::PinDriver;
 use esp_idf_hal::peripherals::Peripherals;
 use esp_idf_svc::log::EspLogger;
 use log::{info, warn};
@@ -21,9 +20,11 @@ use crate::attestation::{Attestation, AttestationEvent};
 use crate::button::Button;
 use crate::entropy::HardwareRng;
 
-/// GPIO pin for the attestation trigger button
+/// GPIO pin for the attestation trigger button, as recorded in the attestation
+/// payload. Must be kept in sync with the pin taken from `Peripherals` below;
+/// esp-idf-hal pins are distinct types, so this cannot be derived from one.
 /// Default: GPIO0 (BOOT button on most ESP32-S3 devkits)
-const BUTTON_PIN: i32 = 0;
+const BUTTON_PIN: u8 = 0;
 
 fn main() -> anyhow::Result<()> {
     // Initialize ESP-IDF
@@ -38,9 +39,9 @@ fn main() -> anyhow::Result<()> {
     let rng = HardwareRng::new()?;
     info!("Hardware RNG initialized");
 
-    // Initialize button on GPIO0
-    let button_pin = unsafe { esp_idf_hal::gpio::Gpio0::new() };
-    let mut button = Button::new(PinDriver::input(button_pin)?)?;
+    // Initialize button on GPIO0. Taken from the `Peripherals` singleton rather
+    // than conjured with `Gpio0::new()`, which would alias a pin we already own.
+    let mut button = Button::new(peripherals.pins.gpio0)?;
     info!("Button initialized on GPIO{}", BUTTON_PIN);
 
     // Main event loop
@@ -78,9 +79,7 @@ fn main() -> anyhow::Result<()> {
 
 /// Generate a fresh attestation for a button press event
 fn generate_attestation(rng: &HardwareRng) -> anyhow::Result<Attestation> {
-    let event = AttestationEvent::ButtonPress {
-        gpio: BUTTON_PIN as u8,
-    };
+    let event = AttestationEvent::ButtonPress { gpio: BUTTON_PIN };
 
     Attestation::create(rng, event)
 }

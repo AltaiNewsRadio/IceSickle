@@ -20,13 +20,19 @@
 //! - Trigger attestations faster than the cooldown allows
 //! - Accumulate "credits" for future rapid-fire signing
 
-use core::sync::atomic::{AtomicU64, Ordering};
+use core::sync::atomic::{AtomicU32, Ordering};
 
 /// Minimum milliseconds between attestations
-const COOLDOWN_MS: u64 = 1000; // 1 second default
+const COOLDOWN_MS: u32 = 1000; // 1 second default
 
-/// Tracks the timestamp of the last successful attestation
-static LAST_ATTESTATION_MS: AtomicU64 = AtomicU64::new(0);
+/// Tracks the timestamp of the last successful attestation.
+///
+/// 32-bit rather than 64-bit: xtensa-esp32s3 has no 64-bit atomics, so
+/// `AtomicU64` does not exist on this target. Milliseconds in a u32 wrap every
+/// ~49.7 days; `wrapping_sub` in `check()` keeps the elapsed-time computation
+/// correct across that wrap, because COOLDOWN_MS is vastly smaller than the
+/// wrap period. `button.rs` uses the same representation for the same reason.
+static LAST_ATTESTATION_MS: AtomicU32 = AtomicU32::new(0);
 
 /// Result of a cooldown check
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -34,7 +40,7 @@ pub enum CooldownResult {
     /// Attestation allowed, cooldown has elapsed
     Ready,
     /// Attestation blocked, must wait
-    Wait { remaining_ms: u64 },
+    Wait { remaining_ms: u32 },
 }
 
 /// Check if enough time has passed since the last attestation
@@ -42,7 +48,10 @@ pub fn check() -> CooldownResult {
     let now = get_timestamp_ms();
     let last = LAST_ATTESTATION_MS.load(Ordering::SeqCst);
 
-    let elapsed = now.saturating_sub(last);
+    // Wrapping, not saturating: correct across the ~49.7-day u32 millisecond
+    // wrap. A `last` ahead of `now` yields a large elapsed value, i.e. Ready,
+    // which fails open rather than latching the device shut.
+    let elapsed = now.wrapping_sub(last);
 
     if elapsed >= COOLDOWN_MS {
         CooldownResult::Ready
@@ -65,7 +74,7 @@ pub fn record_attestation() {
 ///
 /// Returns `Ok(())` if attestation is allowed and records the timestamp.
 /// Returns `Err(remaining_ms)` if still in cooldown.
-pub fn gate() -> Result<(), u64> {
+pub fn gate() -> Result<(), u32> {
     match check() {
         CooldownResult::Ready => {
             record_attestation();
@@ -75,10 +84,10 @@ pub fn gate() -> Result<(), u64> {
     }
 }
 
-/// Get milliseconds since boot
-fn get_timestamp_ms() -> u64 {
+/// Get milliseconds since boot (wraps at u32::MAX, see LAST_ATTESTATION_MS)
+fn get_timestamp_ms() -> u32 {
     // TODO: Consider using a monotonic clock source that survives light sleep
-    unsafe { esp_idf_sys::esp_timer_get_time() as u64 / 1000 }
+    (unsafe { esp_idf_sys::esp_timer_get_time() } / 1000) as u32
 }
 
 #[cfg(test)]

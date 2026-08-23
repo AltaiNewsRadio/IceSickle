@@ -29,12 +29,12 @@ jobs:
             ~/.cargo/registry
             ~/.cargo/git
             target
-          key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock', '**/Cargo.toml') }}
+          key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
           restore-keys: |
             ${{ runner.os }}-cargo-
 
       - name: Build
-        run: cargo build --release
+        run: cargo build --release --locked
 
   lint:
     runs-on: ubuntu-latest
@@ -48,13 +48,28 @@ jobs:
           buildtargets: esp32s3
           ldproxy: true
 
+      - name: Cache cargo registry
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            target
+          key: ${{ runner.os }}-cargo-lint-${{ hashFiles('**/Cargo.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-cargo-lint-
+
       - name: Check formatting
         run: cargo fmt --all -- --check
 
       - name: Clippy
-        run: cargo clippy --all-targets -- -D warnings
+        run: cargo clippy --all-targets --locked -- -D warnings
 
-  # Enforce no-network policy (WiFi/BLE disabled by design)
+  # Enforce no-network policy (WiFi/BLE disabled by design).
+  #
+  # The pattern list is deliberately restricted to API symbols that cannot occur
+  # in English prose. An earlier version matched the bare substring "ble", which
+  # flagged "extensible", "stable" and "Unlinkable" in doc comments.
   no-network-guard:
     runs-on: ubuntu-latest
     steps:
@@ -62,39 +77,46 @@ jobs:
 
       - name: Check for forbidden network symbols
         run: |
-          echo "Checking for WiFi/BLE symbols in src/..."
-          if grep -rn --include="*.rs" -E "(esp_wifi|esp_bt|wifi|ble|bluetooth|WifiDriver|BleDriver)" src/; then
-            echo "❌ FAILED: Network symbols found in src/"
-            echo "IceSickle is designed to be network-free. See THREAT_MODEL.md."
+          echo "Scanning src/ for networking APIs..."
+          if grep -rnE --include="*.rs" \
+            '\b(esp_wifi|esp_now|esp_bt|esp_bluedroid|esp_nimble|esp_netif|esp_eth|esp_tls|esp_http|esp_websocket|esp_mqtt|lwip)\b|\b(EspWifi|WifiDriver|AsyncWifi|BleDriver|BtDriver|EspNetif|EspEth|EspHttp|EspMqtt|TcpStream|TcpListener|UdpSocket)\b|\bstd::net\b' \
+            src/; then
+            echo "::error::Network symbols found in src/. IceSickle is designed to be network-free; see THREAT_MODEL.md."
             exit 1
           fi
-          echo "✅ No network symbols found"
+          echo "No network symbols found"
 
       - name: Verify sdkconfig disables networking
         run: |
           echo "Checking sdkconfig.defaults..."
           if ! grep -q "CONFIG_BT_ENABLED=n" sdkconfig.defaults; then
-            echo "❌ FAILED: Bluetooth not explicitly disabled"
+            echo "::error::Bluetooth not explicitly disabled in sdkconfig.defaults"
             exit 1
           fi
           if ! grep -q "CONFIG_ESP_WIFI_ENABLED=n" sdkconfig.defaults; then
-            echo "❌ FAILED: WiFi not explicitly disabled"
+            echo "::error::WiFi not explicitly disabled in sdkconfig.defaults"
             exit 1
           fi
-          echo "✅ Network disabled in sdkconfig"
+          echo "Network disabled in sdkconfig"
 
-  # Host-side tests (unit tests that don't require ESP32 hardware)
-  test:
+  # Manifest / lockfile validation on stable, without the ESP toolchain.
+  #
+  # This is NOT a test job. Every module in src/ depends on esp-idf-*, so
+  # `cargo test` cannot run on a host target today; the unit tests in
+  # attestation.rs and cooldown.rs only execute when built for xtensa.
+  # Making them host-runnable requires target-gating the esp-idf deps.
+  manifest:
     runs-on: ubuntu-latest
+    env:
+      # rust-toolchain.toml pins channel = "esp", which this job does not install.
+      RUSTUP_TOOLCHAIN: stable
     steps:
       - uses: actions/checkout@v4
 
-      - name: Setup Rust (stable, for host tests)
-        uses: dtolnay/rust-action@stable
+      - uses: dtolnay/rust-toolchain@stable
 
-      - name: Run host tests
-        run: |
-          # Only run tests that are #[cfg(test)] and don't require ESP32
-          # Currently just the hex encoding test
-          echo "Host-side unit tests would run here"
-          echo "Note: Most code requires ESP32 target, so host tests are limited"
+      - name: Verify Cargo.lock is in sync with Cargo.toml
+        run: cargo metadata --locked --format-version 1 > /dev/null
+
+      - name: Verify Cargo.lock is committed
+        run: test -f Cargo.lock || { echo "::error::Cargo.lock must be committed"; exit 1; }
