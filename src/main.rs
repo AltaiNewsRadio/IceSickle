@@ -12,7 +12,6 @@ mod button;
 mod cooldown;
 mod entropy;
 
-use esp_idf_hal::gpio::PinDriver;
 use esp_idf_hal::peripherals::Peripherals;
 use esp_idf_svc::log::EspLogger;
 use log::{info, warn};
@@ -42,7 +41,7 @@ fn main() -> anyhow::Result<()> {
 
     // Initialize button on GPIO0. Taken from the `Peripherals` singleton rather
     // than conjured with `Gpio0::new()`, which would alias a pin we already own.
-    let mut button = Button::new(PinDriver::input(peripherals.pins.gpio0)?)?;
+    let mut button = Button::new(peripherals.pins.gpio0)?;
     info!("Button initialized on GPIO{}", BUTTON_PIN);
 
     // Main event loop
