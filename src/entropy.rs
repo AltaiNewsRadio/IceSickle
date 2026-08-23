@@ -78,22 +78,22 @@ impl CryptoRng for HardwareRng {}
 impl RngCore for &HardwareRng {
     fn next_u32(&mut self) -> u32 {
         let mut buf = [0u8; 4];
-        HardwareRng::fill_bytes(*self, &mut buf);
+        HardwareRng::fill_bytes(self, &mut buf);
         u32::from_le_bytes(buf)
     }
 
     fn next_u64(&mut self) -> u64 {
         let mut buf = [0u8; 8];
-        HardwareRng::fill_bytes(*self, &mut buf);
+        HardwareRng::fill_bytes(self, &mut buf);
         u64::from_le_bytes(buf)
     }
 
     fn fill_bytes(&mut self, dest: &mut [u8]) {
-        HardwareRng::fill_bytes(*self, dest)
+        HardwareRng::fill_bytes(self, dest)
     }
 
     fn try_fill_bytes(&mut self, dest: &mut [u8]) -> Result<(), rand_core::Error> {
-        HardwareRng::fill_bytes(*self, dest);
+        HardwareRng::fill_bytes(self, dest);
         Ok(())
     }
 }
