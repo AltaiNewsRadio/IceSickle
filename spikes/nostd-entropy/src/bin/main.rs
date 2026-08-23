@@ -34,6 +34,10 @@ esp_bootloader_esp_idf::esp_app_desc!();
 /// Recorded, not read: this spike has no button wired up.
 const BUTTON_PIN: u8 = 0;
 
+#[allow(
+    clippy::large_stack_frames,
+    reason = "the signing path keeps a seed, an expanded key, a signature and fixed hex buffers on the stack; with no allocator that is the point, not an oversight"
+)]
 #[main]
 fn main() -> ! {
     esp_println::logger::init_logger_from_env();

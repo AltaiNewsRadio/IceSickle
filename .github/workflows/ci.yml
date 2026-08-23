@@ -21,6 +21,9 @@ jobs:
           default: true
           buildtargets: esp32s3
           ldproxy: true
+          # Pinned: `latest` makes espup hit the GitHub API per job, which
+          # rate-limited (403) once a third job started calling it.
+          version: 1.97.0.0
 
       - name: Cache cargo registry
         uses: actions/cache@v4
@@ -47,6 +50,9 @@ jobs:
           default: true
           buildtargets: esp32s3
           ldproxy: true
+          # Pinned: `latest` makes espup hit the GitHub API per job, which
+          # rate-limited (403) once a third job started calling it.
+          version: 1.97.0.0
 
       - name: Cache cargo registry
         uses: actions/cache@v4
@@ -158,6 +164,9 @@ jobs:
         with:
           default: true
           buildtargets: esp32s3
+          # no_std links directly; ldproxy is only needed for esp-idf `std`.
+          ldproxy: false
+          version: 1.97.0.0
 
       - name: Cache cargo registry
         uses: actions/cache@v4
