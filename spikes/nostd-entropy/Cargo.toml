@@ -1,0 +1,57 @@
+[package]
+edition      = "2024"
+name         = "icesickle-nostd"
+rust-version = "1.88"
+version      = "0.1.0"
+
+[[bin]]
+name = "icesickle-nostd"
+path = "./src/bin/main.rs"
+
+# Versions below are whatever `esp-generate 1.3.0 --chip esp32s3 -o unstable-hal
+# -o esp-backtrace -o log` produced, reconciled rather than hand-picked. The
+# `unstable` feature on esp-hal is required: `Trng`/`TrngSource` are gated
+# behind `#[instability::unstable]`.
+[dependencies]
+esp-hal = { version = "~1.1.0", features = ["esp32s3", "log-04", "unstable"] }
+
+esp-bootloader-esp-idf = { version = "0.5.0", features = ["esp32s3", "log-04"] }
+log                    = "0.4.27"
+
+critical-section = "1.2.0"
+esp-backtrace = { version = "0.19.0", features = [
+  "esp32s3",
+  "panic-handler",
+  "println",
+] }
+esp-println = { version = "0.17.0", features = ["esp32s3", "log-04"] }
+
+# Cryptography.
+#
+# `default-features = false` keeps this no_std and allocator-free. It also drops
+# dalek's `fast` feature (precomputed tables): smaller flash, slower signing.
+# The esp-idf prototype made the same trade, so this is parity, not a new
+# decision -- but it is worth revisiting once we can measure on hardware.
+ed25519-dalek = { version = "2", default-features = false, features = ["zeroize"] }
+zeroize = { version = "1", default-features = false, features = ["derive"] }
+
+# Serialization.
+#
+# Deliberately NO `alloc` feature on postcard: payloads are encoded with
+# `postcard::to_slice` into a stack buffer. `to_allocvec` is unavailable by
+# construction, so a heap-allocated copy of a signed payload cannot appear.
+serde = { version = "1", default-features = false, features = ["derive"] }
+postcard = { version = "1", default-features = false }
+heapless = { version = "0.8", default-features = false }
+
+# For fine tuning these settings, please refer to https://doc.rust-lang.org/cargo/reference/profiles.html
+[profile.dev]
+# The default debug profile is too slow and too big for resource-constrained devices.
+# Always build with some optimizations enabled.
+opt-level = "s"
+
+[profile.release]
+codegen-units = 1     # LLVM can perform better optimizations using a single thread
+debug         = 2     # prefer slower builds but better debugging experience
+lto           = 'fat'
+opt-level     = 's'
