@@ -180,6 +180,9 @@ jobs:
         working-directory: ${{ runner.temp }}/spike
         run: cargo fmt --all -- --check
 
+      # --lib --bins, not --all-targets: --all-targets builds the `lib test`
+      # target, which needs the `test` crate and a #[panic_handler] that a
+      # no_std binary cannot provide. There are no test targets here anyway.
       - name: Clippy
         working-directory: ${{ runner.temp }}/spike
-        run: cargo clippy --all-targets --locked -- -D warnings
+        run: cargo clippy --lib --bins --locked -- -D warnings

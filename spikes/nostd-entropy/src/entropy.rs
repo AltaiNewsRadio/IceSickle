@@ -60,7 +60,10 @@ use esp_hal::rng::{Trng, TrngSource};
 /// RNG clock, 8 MHz clock source, and the SAR ADC sampling a disconnected
 /// input). Dropping it reverts that and releases ADC1.
 pub struct EntropySource<'d> {
-    inner: TrngSource<'d>,
+    /// Held purely for its `Drop`, which reverts the entropy path and releases
+    /// ADC1. Underscore-prefixed so `dead_code` does not flag a field that is
+    /// never read but very much does something.
+    _source: TrngSource<'d>,
 }
 
 impl<'d> EntropySource<'d> {
@@ -70,7 +73,7 @@ impl<'d> EntropySource<'d> {
     /// program until this is dropped, which is exactly the trade we want.
     pub fn new(rng: RNG<'d>, adc1: ADC1<'d>) -> Self {
         Self {
-            inner: TrngSource::new(rng, adc1),
+            _source: TrngSource::new(rng, adc1),
         }
     }
 
