@@ -77,14 +77,30 @@ jobs:
 
       - name: Check for forbidden network symbols
         run: |
-          echo "Scanning src/ for networking APIs..."
+          echo "Scanning Rust sources for networking APIs..."
           if grep -rnE --include="*.rs" \
             '\b(esp_wifi|esp_now|esp_bt|esp_bluedroid|esp_nimble|esp_netif|esp_eth|esp_tls|esp_http|esp_websocket|esp_mqtt|lwip)\b|\b(EspWifi|WifiDriver|AsyncWifi|BleDriver|BtDriver|EspNetif|EspEth|EspHttp|EspMqtt|TcpStream|TcpListener|UdpSocket)\b|\bstd::net\b' \
-            src/; then
-            echo "::error::Network symbols found in src/. IceSickle is designed to be network-free; see THREAT_MODEL.md."
+            src/ spikes/; then
+            echo "::error::Network symbols found. IceSickle is designed to be network-free; see THREAT_MODEL.md."
             exit 1
           fi
           echo "No network symbols found"
+
+      - name: Verify no radio crates in any dependency graph
+        run: |
+          echo "Scanning manifests and lockfiles for radio crates..."
+          # Radios are opt-in transport tiers, added deliberately and later.
+          # Nothing should pull one in today -- including transitively, which is
+          # why the lockfiles are scanned and not just the manifests.
+          if grep -rnE --include="Cargo.lock" '^name = "(esp-radio|esp-wifi|esp-now|trouble|trouble-host|bleps|esp-ieee802154)"' .; then
+            echo "::error::A radio crate is in the dependency graph. IceSickle is radio-silent by default; radios are opt-in transport tiers introduced deliberately."
+            exit 1
+          fi
+          if grep -rnE --include="Cargo.toml" '^[[:space:]]*(esp-radio|esp-wifi|esp-now|trouble|trouble-host|bleps|esp-ieee802154)[[:space:]]*=' .; then
+            echo "::error::A radio crate is declared as a dependency. See THREAT_MODEL.md."
+            exit 1
+          fi
+          echo "No radio crates in any dependency graph"
 
       - name: Verify sdkconfig disables networking
         run: |
@@ -120,3 +136,50 @@ jobs:
 
       - name: Verify Cargo.lock is committed
         run: test -f Cargo.lock || { echo "::error::Cargo.lock must be committed"; exit 1; }
+
+  # Bare-metal no_std entropy spike (spikes/nostd-entropy).
+  #
+  # Built from a copy OUTSIDE the repo on purpose. Cargo discovers
+  # .cargo/config.toml by walking up from the working directory, and the repo
+  # root's config targets xtensa-esp32s3-espidf with
+  # `[unstable] build-std = ["std", "panic_abort"]`. Cargo *joins* config arrays
+  # rather than replacing them, so building the spike in place would try to
+  # build `std` for xtensa-esp32s3-none-elf and fail. Copying it out is the
+  # cheapest way to keep the spike hermetic while it lives alongside the
+  # esp-idf crate; if the migration lands, the no_std crate becomes the root
+  # and this step goes away.
+  spike-nostd:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup ESP-RS toolchain
+        uses: esp-rs/xtensa-toolchain@v1.5
+        with:
+          default: true
+          buildtargets: esp32s3
+
+      - name: Cache cargo registry
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+          key: ${{ runner.os }}-cargo-spike-${{ hashFiles('spikes/nostd-entropy/Cargo.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-cargo-spike-
+
+      - name: Copy spike out of the repo's cargo-config scope
+        run: cp -r spikes/nostd-entropy "$RUNNER_TEMP/spike"
+
+      - name: Build
+        working-directory: ${{ runner.temp }}/spike
+        run: cargo build --release --locked
+
+      - name: Check formatting
+        working-directory: ${{ runner.temp }}/spike
+        run: cargo fmt --all -- --check
+
+      - name: Clippy
+        working-directory: ${{ runner.temp }}/spike
+        run: cargo clippy --all-targets --locked -- -D warnings
