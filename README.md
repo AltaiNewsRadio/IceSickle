@@ -14,7 +14,7 @@ Instead, IceSickle provides a **hardware-assisted, event-driven signing primitiv
 | Traditional Attestation | IceSickle |
 |------------------------|-----------|
 | Persistent device identity | No identity persistence |
-| Proves firmware integrity | Proves physical event occurred |
+| Proves firmware integrity | Proves a payload was signed and is unaltered |
 | Long-lived keys in secure storage | Ephemeral keys, zeroized after use |
 | Remote verifier protocol | Simple signed payload output |
 
@@ -31,7 +31,7 @@ Instead, IceSickle provides a **hardware-assisted, event-driven signing primitiv
 │  2. Construct payload: { event, coarse_time, local_counter } │
 │  3. Sign payload with ephemeral private key                  │
 │  4. Output: { public_key, signature, payload }               │
-│  5. Zeroize private key (automatic, enforced by type system) │
+│  5. Zeroize private key (immediately after signing)          │
 └──────────────────────────────────────────────────────────────┘
 ```
 
@@ -39,17 +39,34 @@ The private key exists only for the duration of the signing operation. It is nev
 
 ## Use Cases
 
-- **Physical presence proof**: Prove a button was pressed at a relative point in time
-- **Air-gapped signing ceremonies**: Generate one-time signatures without network exposure
-- **Audit trail anchoring**: Create signed records of physical events with local time ordering
-- **Dead man's switch**: Proof of continued physical interaction
+> **These describe the intended design, not what the current firmware
+> delivers.** Today an attestation proves only that its payload is unaltered
+> since signing: a fresh key signing a self-authored payload is reproducible by
+> anyone, with no device and no event. The authorization and time-bounding these
+> use cases rest on are specified in
+> [docs/VERIFIER_MODEL.md](docs/VERIFIER_MODEL.md) and are not built yet.
+
+- **Air-gapped signing**: produce one-time signatures with no network exposure.
+  Works today.
+- **Physical presence claim**: assert a button was pressed. Note *claim* — the
+  device can show its firmware signed the assertion, not that a human caused it.
+  No offline device can prove the latter.
+- **Audit trail anchoring**: signed records ordered within a single power cycle.
+  Ordering does not survive a reboot, and nothing anchors it to wall-clock time
+  until the verifier model lands.
+- **Dead man's switch**: proof of continued physical interaction. Depends
+  entirely on the freshness bounds in the verifier model — without them there is
+  no verifiable notion of "recently", which is the whole mechanism.
 
 ## Hardware
 
 **Reference platform:** ESP32-S3 (16MB Flash / 8MB PSRAM)
 
 Chosen for:
-- Hardware true RNG (thermal noise source)
+- Hardware RNG. True randomness is *conditional*: the ESP32-S3 RNG requires
+  either the RF subsystem or an ADC entropy source to be live. IceSickle keeps
+  radios off by design, so the SAR-ADC path has to be enabled explicitly — see
+  [docs/NOSTD_ENTROPY_SPIKE.md](docs/NOSTD_ENTROPY_SPIKE.md)
 - Availability and low cost
 - Mature Rust toolchain (`esp-rs`)
 - No network connectivity required (WiFi/BT disabled by default)
@@ -72,6 +89,23 @@ Planned and supported relay mechanisms include:
 
 This separation ensures that evidence production remains decoupled from
 transport, identity, and network policy.
+
+### Hybrid Relay Model (Conceptual Comparison to Tor)
+
+IceSickle’s hybrid relay system is conceptually similar to Tor, but operates at a
+different layer and solves a different problem.
+
+Tor is designed to protect **network anonymity** during live communication by
+obscuring routing paths, IP addresses, and timing correlations.
+
+IceSickle’s hybrid relays protect **epistemic anonymity** by obscuring the link
+between an attestation and the device that produced it. Relays batch, delay,
+reorder, and forward already-signed attestations without preserving origin
+metadata.
+
+Unlike Tor, IceSickle does not perform onion routing or interactive traffic
+relay. The goal is not anonymous communication, but **unlinkable evidence
+production** under adversarial observation.
 
 ## Building
 
@@ -119,8 +153,12 @@ icesickle/
 │   ├── button.rs        # GPIO event detection
 │   ├── cooldown.rs      # Physical rate limiting
 │   └── entropy.rs       # Hardware RNG wrapper
+├── spikes/
+│   └── nostd-entropy/   # no_std esp-hal spike: entropy-enforced signing
 ├── docs/
-│   └── ARCHITECTURE.md  # Architecture rationale
+│   ├── ARCHITECTURE.md  # Architecture rationale
+│   ├── VERIFIER_MODEL.md      # What an attestation does and does not prove
+│   └── NOSTD_ENTROPY_SPIKE.md # Why no_std, radio silence, emission discipline
 ├── THREAT_MODEL.md      # Explicit threat assumptions
 ├── SECURITY.md          # Vulnerability reporting
 ├── LICENSE              # Apache-2.0
@@ -134,14 +172,22 @@ See [THREAT_MODEL.md](THREAT_MODEL.md) for detailed analysis.
 **Guarantees:**
 - Private keys never persist (zeroized immediately after signing)
 - Each attestation uses a fresh keypair (no key reuse)
-- Entropy sourced from hardware RNG (not PRNG)
 - Payload includes a monotonic counter for replay detection within a single power cycle
+
+**Conditional, not yet guaranteed:**
+- *True hardware entropy.* The RNG is only a true RNG while the RF subsystem or
+  an ADC entropy source is live. With radios off, that means the SAR-ADC path,
+  which is brought up explicitly in `spikes/nostd-entropy/` but **not** in the
+  esp-idf crate at the repo root. Unvalidated on hardware either way.
 
 **Non-goals:**
 - Device identity or authentication
 - Firmware integrity verification
 - Protection against physical attacks on the device itself
 - Secure boot chain verification
+- Proof to a third party that a physical event actually occurred — see
+  [docs/VERIFIER_MODEL.md](docs/VERIFIER_MODEL.md) for why this is out of reach
+  for an identity-less offline device, and what replaces it
 
 ## Verifying Attestations
 
@@ -162,41 +208,3 @@ Apache-2.0. See [LICENSE](LICENSE).
 ## Contributing
 
 Contributions welcome. Please read [THREAT_MODEL.md](THREAT_MODEL.md) first to understand the security boundaries.
-=======
-# IceSickle
-Cryptographically verifiable and identity-less HUMINT attestation device without network connectivity built on ESP32-S3 hardware
-
-## Relay & Transport Model
-
-IceSickle is intentionally **transport-agnostic**.
-
-The device itself does not maintain network connectivity and does not embed
-satellite, cellular, or IP networking stacks. Instead, it produces signed
-attestation artifacts that can be relayed later using a variety of mechanisms.
-
-Supported and planned relay models include:
-
-- **Direct satellite uplink** (one-way, short-burst transmission)
-- **Hybrid gateways** that batch, delay, mix, and forward attestations
-- **Physical transfer** (USB, SD card, or other air-gapped methods)
-
-This separation allows IceSickle to remain offline-first while supporting
-global, censorship-resistant relay paths when required.
-
-### Hybrid Relay Model (Conceptual Comparison to Tor)
-
-IceSickle’s hybrid relay system is conceptually similar to Tor, but operates at a
-different layer and solves a different problem.
-
-Tor is designed to protect **network anonymity** during live communication by
-obscuring routing paths, IP addresses, and timing correlations.
-
-IceSickle’s hybrid relays protect **epistemic anonymity** by obscuring the link
-between an attestation and the device that produced it. Relays batch, delay,
-reorder, and forward already-signed attestations without preserving origin
-metadata.
-
-Unlike Tor, IceSickle does not perform onion routing or interactive traffic
-relay. The goal is not anonymous communication, but **unlinkable evidence
-production** under adversarial observation.
->>>>>>> 51536d4854db84716dca7190e3888f3857a5bf6f
