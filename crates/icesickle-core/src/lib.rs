@@ -43,7 +43,7 @@ use zeroize::Zeroize;
 ///   length, to anyone reading the bytes. That is the transport's problem.
 /// - 32 is headroom, not a measurement: the current worst case is 18 bytes.
 ///   [`Attestation::create`] fails closed if a future variant overflows it.
-///   `docs/VERIFIER_MODEL.md` projects a v2 payload needing 128 or 256.
+///   `docs/TOKEN_PROTOCOL.md` settles v2 at 64, inside a 224-byte frame.
 pub const ATTESTATION_PAYLOAD_LEN: usize = 32;
 
 /// Current payload format version.

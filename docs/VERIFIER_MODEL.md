@@ -165,6 +165,16 @@ content, this is a flat cost on every transmission — which matters a great dea
 for a constrained opt-in transport tier and should be sized against whatever the
 narrowest planned tier can carry, not against convenience.
 
+> **Superseded.** Both numbers above are wrong, in opposite directions. The
+> "48–96 bytes, scheme-dependent" row undercounts blind RSA badly — at RSA-2048
+> the issuer signature alone is 256 bytes. And the whole estimate assumed the
+> token is a field *added* to the payload. It is not: under
+> `docs/TOKEN_PROTOCOL.md` the token *is* the attestation's public key, which the
+> wire format already carried, so the only new field is the issuer's 64-byte
+> signature and it sits outside the padded payload. The settled numbers are
+> `ATTESTATION_PAYLOAD_LEN = 64` and a 224-byte frame — 224 rather than 256
+> because a 256-byte tier does not fit one RFM95W packet (D5).
+
 The v1 → v2 bump is what the `version` field exists for; v1 attestations remain
 verifiable as integrity-only.
 
@@ -191,11 +201,14 @@ better for saying so out loud.
 
 Need a human, in rough dependency order:
 
-1. **Token scheme.** Blind RSA is simple and well-understood but signatures are
-   large (256+ bytes at 2048-bit) and would dominate the payload budget. A VOPRF
-   or blind Schnorr construction is far more compact but less boring. The payload
-   size in §5 hinges on this.
-2. **Epoch length**, per §3.2 — the time-bound versus anonymity-set knob.
+1. ~~**Token scheme.**~~ **Settled** as blind Schnorr on ed25519 — see D4 in
+   `docs/DECISIONS_V2_1.md`, developed into a protocol in
+   `docs/TOKEN_PROTOCOL.md`. The deciding argument was not signature size but
+   public verifiability: verification is distributed to offline field nodes, and
+   a VOPRF's verify key is its issue key, so distributing the checker would
+   distribute forgery power.
+2. **Epoch length**, per §3.2 — the time-bound versus anonymity-set knob. Now
+   doubly load-bearing: under D6 it is also the revocation granularity.
 3. **Beacon source.** An external public beacon (drand) is independently
    verifiable by anyone but needs the verifier to trust that beacon; a
    verifier-signed epoch token keeps it in-house but makes the verifier the
