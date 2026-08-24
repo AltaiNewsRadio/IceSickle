@@ -22,3 +22,6 @@ publish = false
 
 [dependencies]
 ed25519-dalek = "2"
+# Shares ATTESTATION_PAYLOAD_LEN and the payload type with the firmware rather
+# than restating them, so the two cannot drift.
+icesickle-core = { path = "../../crates/icesickle-core" }

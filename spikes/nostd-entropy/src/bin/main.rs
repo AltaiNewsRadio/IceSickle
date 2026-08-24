@@ -18,12 +18,16 @@
 )]
 #![deny(clippy::large_stack_frames)]
 
+use core::sync::atomic::{AtomicU32, Ordering};
+
 use esp_backtrace as _;
+
 use esp_hal::clock::CpuClock;
 use esp_hal::main;
+use esp_hal::time::Instant;
 use esp_println::println;
 
-use icesickle_nostd::attestation::{Attestation, AttestationEvent};
+use icesickle_core::{Attestation, AttestationEvent};
 use icesickle_nostd::entropy::{EntropySource, trng_available};
 
 // This creates a default app-descriptor required by the esp-idf bootloader.
@@ -33,6 +37,9 @@ esp_bootloader_esp_idf::esp_app_desc!();
 ///
 /// Recorded, not read: this spike has no button wired up.
 const BUTTON_PIN: u8 = 0;
+
+/// Monotonic counter. Resets on power cycle, like the cooldown it will pair with.
+static COUNTER: AtomicU32 = AtomicU32::new(0);
 
 #[allow(
     clippy::large_stack_frames,
@@ -80,7 +87,15 @@ fn main() -> ! {
     let entropy = entropy_source.entropy();
     let event = AttestationEvent::ButtonPress { gpio: BUTTON_PIN };
 
-    match Attestation::create(&entropy, event) {
+    // The two hardware inputs, made explicit. Everything downstream of them is
+    // deterministic, which is what lets icesickle-core be tested on a host.
+    // `create` zeroizes `seed` before returning.
+    let mut seed = [0u8; 32];
+    entropy.read(&mut seed);
+    let timestamp_ms = Instant::now().duration_since_epoch().as_millis();
+    let counter = COUNTER.fetch_add(1, Ordering::SeqCst);
+
+    match Attestation::create(&mut seed, event, timestamp_ms, counter) {
         Ok(attestation) => {
             println!("=== ATTESTATION ===");
             println!("event:     {:?}", attestation.event());

@@ -869,20 +869,27 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "2304e00983f87ffb38b55b444b5e3b60a884b5d30c0fca7d82fe33449bbe55ea"
 
 [[package]]
+name = "icesickle-core"
+version = "0.1.0"
+dependencies = [
+ "ed25519-dalek",
+ "heapless 0.8.0",
+ "postcard",
+ "serde",
+ "zeroize",
+]
+
+[[package]]
 name = "icesickle-nostd"
 version = "0.1.0"
 dependencies = [
  "critical-section",
- "ed25519-dalek",
  "esp-backtrace",
  "esp-bootloader-esp-idf",
  "esp-hal",
  "esp-println",
- "heapless 0.8.0",
+ "icesickle-core",
  "log",
- "postcard",
- "serde",
- "zeroize",
 ]
 
 [[package]]

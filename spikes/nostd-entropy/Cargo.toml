@@ -38,23 +38,11 @@ esp-println = { version = "0.17.0", default-features = false, features = [
 ] }
 
 
-# Cryptography.
-#
-# `default-features = false` keeps this no_std and allocator-free. It also drops
-# dalek's `fast` feature (precomputed tables): smaller flash, slower signing.
-# The esp-idf prototype made the same trade, so this is parity, not a new
-# decision -- but it is worth revisiting once we can measure on hardware.
-ed25519-dalek = { version = "2", default-features = false, features = ["zeroize"] }
-zeroize = { version = "1", default-features = false, features = ["derive"] }
-
-# Serialization.
-#
-# Deliberately NO `alloc` feature on postcard: payloads are encoded with
-# `postcard::to_slice` into a stack buffer. `to_allocvec` is unavailable by
-# construction, so a heap-allocated copy of a signed payload cannot appear.
-serde = { version = "1", default-features = false, features = ["derive"] }
-postcard = { version = "1", default-features = false }
-heapless = { version = "0.8", default-features = false }
+# Attestation logic: payload encoding, fixed-length padding, ephemeral-key
+# signing. Platform-independent and host-testable, which is where the signing
+# path is actually covered -- QEMU cannot reach this code (esp_hal::init() does
+# not return under it) and hardware is not available.
+icesickle-core = { path = "../../crates/icesickle-core" }
 
 [features]
 default = ["console-auto"]

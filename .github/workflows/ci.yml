@@ -178,23 +178,61 @@ jobs:
           restore-keys: |
             ${{ runner.os }}-cargo-spike-
 
+      # Preserves the tree shape: the spike has a path dependency on
+      # ../../crates/icesickle-core, which a flat copy would break.
       - name: Copy spike out of the repo's cargo-config scope
-        run: cp -r spikes/nostd-entropy "$RUNNER_TEMP/spike"
+        run: |
+          mkdir -p "$RUNNER_TEMP/ice/spikes" "$RUNNER_TEMP/ice/crates"
+          cp -r spikes/nostd-entropy "$RUNNER_TEMP/ice/spikes/nostd-entropy"
+          cp -r crates/icesickle-core "$RUNNER_TEMP/ice/crates/icesickle-core"
 
       - name: Build
-        working-directory: ${{ runner.temp }}/spike
+        working-directory: ${{ runner.temp }}/ice/spikes/nostd-entropy
         run: cargo build --release --locked
 
       - name: Check formatting
-        working-directory: ${{ runner.temp }}/spike
+        working-directory: ${{ runner.temp }}/ice/spikes/nostd-entropy
         run: cargo fmt --all -- --check
 
       # --lib --bins, not --all-targets: --all-targets builds the `lib test`
       # target, which needs the `test` crate and a #[panic_handler] that a
       # no_std binary cannot provide. There are no test targets here anyway.
       - name: Clippy
-        working-directory: ${{ runner.temp }}/spike
+        working-directory: ${{ runner.temp }}/ice/spikes/nostd-entropy
         run: cargo clippy --lib --bins --locked -- -D warnings
+
+  # Platform-independent attestation logic, tested on the host.
+  #
+  # This is where the signing path is actually covered. Ed25519 signing and
+  # postcard encoding are both deterministic, so with the seed and clock passed
+  # in as parameters the whole path is testable with no ESP32 and no emulator --
+  # which matters, because QEMU cannot reach this code (esp_hal::init() does not
+  # return under it) and hardware is not available.
+  #
+  # Runs from ${{ runner.temp }} for the usual reason: the repo root config
+  # would cross-compile it to xtensa.
+  core:
+    runs-on: ubuntu-latest
+    env:
+      RUSTUP_TOOLCHAIN: stable
+      MANIFEST: ${{ github.workspace }}/crates/icesickle-core/Cargo.toml
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt, clippy
+
+      - name: Test
+        working-directory: ${{ runner.temp }}
+        run: cargo test --manifest-path "$MANIFEST" --locked
+
+      - name: Check formatting
+        working-directory: ${{ runner.temp }}
+        run: cargo fmt --manifest-path "$MANIFEST" --all -- --check
+
+      - name: Clippy
+        working-directory: ${{ runner.temp }}
+        run: cargo clippy --manifest-path "$MANIFEST" --all-targets --locked -- -D warnings
 
   # Host-side verifier for attestations captured from serial output.
   #
@@ -254,14 +292,19 @@ jobs:
 
       - uses: dtolnay/rust-toolchain@stable
 
+      # Preserves the tree shape: the spike has a path dependency on
+      # ../../crates/icesickle-core, which a flat copy would break.
       - name: Copy spike out of the repo's cargo-config scope
-        run: cp -r spikes/nostd-entropy "$RUNNER_TEMP/spike"
+        run: |
+          mkdir -p "$RUNNER_TEMP/ice/spikes" "$RUNNER_TEMP/ice/crates"
+          cp -r spikes/nostd-entropy "$RUNNER_TEMP/ice/spikes/nostd-entropy"
+          cp -r crates/icesickle-core "$RUNNER_TEMP/ice/crates/icesickle-core"
 
       # console-uart, not the default console-auto: `auto` probes a
       # USB-Serial-JTAG register QEMU does not model, and the output would go to
       # a device -nographic never reads.
       - name: Build firmware
-        working-directory: ${{ runner.temp }}/spike
+        working-directory: ${{ runner.temp }}/ice/spikes/nostd-entropy
         run: cargo build --release --locked --no-default-features --features console-uart
 
       - name: Install espflash
@@ -273,7 +316,7 @@ jobs:
           espflash --version
 
       - name: Build flash image
-        working-directory: ${{ runner.temp }}/spike
+        working-directory: ${{ runner.temp }}/ice/spikes/nostd-entropy
         run: |
           espflash save-image \
             --chip esp32s3 \

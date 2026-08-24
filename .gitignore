@@ -3,6 +3,7 @@
 /build/
 spikes/*/target/
 tools/*/target/
+crates/*/target/
 
 # ESP-IDF
 /managed_components/
