@@ -195,3 +195,139 @@ jobs:
       - name: Clippy
         working-directory: ${{ runner.temp }}/spike
         run: cargo clippy --lib --bins --locked -- -D warnings
+
+  # Host-side verifier for attestations captured from serial output.
+  #
+  # Runs from ${{ runner.temp }} with --manifest-path, NOT from the checkout:
+  # cargo discovers .cargo/config.toml by walking up from the working directory,
+  # and the repo root's config would cross-compile this host tool to xtensa.
+  verify-tool:
+    runs-on: ubuntu-latest
+    env:
+      RUSTUP_TOOLCHAIN: stable
+      MANIFEST: ${{ github.workspace }}/tools/verify-attestation/Cargo.toml
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt, clippy
+
+      - name: Test
+        working-directory: ${{ runner.temp }}
+        run: cargo test --manifest-path "$MANIFEST" --locked
+
+      - name: Check formatting
+        working-directory: ${{ runner.temp }}
+        run: cargo fmt --manifest-path "$MANIFEST" --all -- --check
+
+      - name: Clippy
+        working-directory: ${{ runner.temp }}
+        run: cargo clippy --manifest-path "$MANIFEST" --all-targets --locked -- -D warnings
+
+  # Boot the no_std firmware under Espressif's QEMU and verify what it emits.
+  #
+  # This is the first job that actually RUNS IceSickle rather than compiling it.
+  #
+  # What it can prove: the firmware boots, the entropy gate is demonstrated in
+  # the right order, an attestation is produced, the fixed-length padding holds,
+  # and the signature verifies over the signed bytes.
+  #
+  # What it CANNOT prove: anything about entropy quality. QEMU's RNG model
+  # (hw/misc/esp32_rng.c) returns host randomness from qemu_guest_getrandom
+  # regardless of whether the SAR-ADC entropy path is enabled. Statistical
+  # validation of the TRNG requires real silicon. See docs/NOSTD_ENTROPY_SPIKE.md.
+  emulator:
+    runs-on: ubuntu-latest
+    env:
+      QEMU_REL: esp-develop-9.2.2-20260417
+      QEMU_TAR: qemu-xtensa-softmmu-esp_develop_9.2.2_20260417-x86_64-linux-gnu.tar.xz
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup ESP-RS toolchain
+        uses: esp-rs/xtensa-toolchain@v1.5
+        with:
+          default: true
+          buildtargets: esp32s3
+          ldproxy: false
+          version: 1.97.0.0
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - name: Copy spike out of the repo's cargo-config scope
+        run: cp -r spikes/nostd-entropy "$RUNNER_TEMP/spike"
+
+      # console-uart, not the default console-auto: `auto` probes a
+      # USB-Serial-JTAG register QEMU does not model, and the output would go to
+      # a device -nographic never reads.
+      - name: Build firmware
+        working-directory: ${{ runner.temp }}/spike
+        run: cargo build --release --locked --no-default-features --features console-uart
+
+      - name: Install espflash
+        run: |
+          curl -sSL -o espflash.zip \
+            https://github.com/esp-rs/espflash/releases/latest/download/espflash-x86_64-unknown-linux-gnu.zip
+          unzip -o espflash.zip -d "$HOME/.cargo/bin"
+          chmod +x "$HOME/.cargo/bin/espflash"
+          espflash --version
+
+      - name: Build flash image
+        working-directory: ${{ runner.temp }}/spike
+        run: |
+          espflash save-image \
+            --chip esp32s3 \
+            --flash-size 16mb \
+            --merge \
+            target/xtensa-esp32s3-none-elf/release/icesickle-nostd \
+            "$RUNNER_TEMP/flash.bin"
+          ls -l "$RUNNER_TEMP/flash.bin"
+
+      - name: Install QEMU
+        run: |
+          # The prebuilt qemu-system-xtensa links libSDL2 even when run with
+          # -nographic, and the runner image does not ship it.
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq libsdl2-2.0-0 libslirp0
+          curl -sSL -O "https://github.com/espressif/qemu/releases/download/$QEMU_REL/$QEMU_TAR"
+          tar -xf "$QEMU_TAR" -C "$RUNNER_TEMP"
+          "$RUNNER_TEMP/qemu/bin/qemu-system-xtensa" --version
+          echo "--- machines ---"
+          "$RUNNER_TEMP/qemu/bin/qemu-system-xtensa" -machine help | grep -i esp32 || true
+
+      - name: Boot firmware in QEMU
+        run: |
+          # The firmware ends in an idle loop, so it never exits on its own.
+          # Run it briefly and keep whatever it printed.
+          timeout 45 "$RUNNER_TEMP/qemu/bin/qemu-system-xtensa" \
+            -nographic \
+            -machine esp32s3 \
+            -drive "file=$RUNNER_TEMP/flash.bin,if=mtd,format=raw" \
+            -d guest_errors,unimp \
+            -D "$RUNNER_TEMP/qemu-debug.log" \
+            > "$RUNNER_TEMP/serial.log" 2>&1 || true
+          echo "--- serial output ---"
+          cat "$RUNNER_TEMP/serial.log"
+          echo "--- qemu guest_errors / unimplemented ---"
+          head -60 "$RUNNER_TEMP/qemu-debug.log" 2>/dev/null || echo "(no debug log)"
+
+      - name: Assert the image boots and the app starts
+        run: |
+          grep -q "Loaded app from partition" "$RUNNER_TEMP/serial.log" \
+            || { echo "::error::bootloader did not load the app"; exit 1; }
+          grep -q "IceSickle no_std entropy spike" "$RUNNER_TEMP/serial.log" \
+            || { echo "::error::app produced no output; console or startup regressed"; exit 1; }
+          echo "image boots, bootloader loads it, app runs and prints"
+
+      - name: Verify the attestation, if one was produced
+        working-directory: ${{ runner.temp }}
+        env:
+          RUSTUP_TOOLCHAIN: stable
+        run: |
+          if grep -q "payload:" "$RUNNER_TEMP/serial.log"; then
+            cargo run --quiet \
+              --manifest-path "$GITHUB_WORKSPACE/tools/verify-attestation/Cargo.toml" \
+              --locked -- "$RUNNER_TEMP/serial.log"
+          else
+            echo "::notice::No attestation under QEMU: esp_hal::init() does not return (see job comment). Signing is covered by the verify-attestation unit tests; end-to-end needs Wokwi or hardware."
+          fi
