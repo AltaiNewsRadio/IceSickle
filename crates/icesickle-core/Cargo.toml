@@ -1,0 +1,28 @@
+[package]
+name = "icesickle-core"
+version = "0.1.0"
+edition = "2021"
+description = "Platform-independent IceSickle attestation logic: payload encoding, fixed-length padding, ephemeral-key signing"
+license = "Apache-2.0"
+publish = false
+
+# no_std, no allocator, no hardware. Every hardware dependency -- entropy and
+# the clock -- is a parameter supplied by the caller, which is what makes this
+# crate testable on a host with no ESP32 and no emulator.
+#
+# NOTE: the repo root's .cargo/config.toml targets xtensa and sets build-std, and
+# cargo discovers config from the working directory. Test this from outside the
+# repo:
+#
+#     cd /some/other/dir
+#     cargo test --manifest-path <repo>/crates/icesickle-core/Cargo.toml
+#
+# That is the third crate to need this workaround. See the PR discussion about
+# moving the esp-idf crate off the repo root.
+
+[dependencies]
+ed25519-dalek = { version = "2", default-features = false, features = ["zeroize"] }
+zeroize = { version = "1", default-features = false, features = ["derive"] }
+serde = { version = "1", default-features = false, features = ["derive"] }
+postcard = { version = "1", default-features = false }
+heapless = { version = "0.8", default-features = false }

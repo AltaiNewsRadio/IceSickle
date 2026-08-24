@@ -13,12 +13,9 @@
 
 use ed25519_dalek::{Signature, Verifier, VerifyingKey};
 
-/// Must match `icesickle_nostd::attestation::ATTESTATION_PAYLOAD_LEN`.
-///
-/// Duplicated rather than shared because that crate is `no_std` and built for
-/// xtensa; [`check_payload_len`] exists so a drift between the two is a test
-/// failure rather than a silent mismatch.
-pub const ATTESTATION_PAYLOAD_LEN: usize = 32;
+/// Re-exported from the firmware's own crate, so the verifier and the device
+/// cannot disagree about how long a signed payload is.
+pub use icesickle_core::ATTESTATION_PAYLOAD_LEN;
 
 /// An attestation recovered from a log.
 #[derive(Debug, Clone, PartialEq, Eq)]
