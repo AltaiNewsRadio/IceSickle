@@ -113,10 +113,33 @@ Hence: obfuscation reduces what an intercept yields. It does not reduce the
 probability of being located. Those budgets are separate, and the second one is
 spent by transmitting, not by what you transmit.
 
+## Emulation coverage
+
+Espressif's QEMU (`hw/xtensa/esp32s3.c`) boots the real ESP32-S3 ROM and ESP-IDF
+bootloader, accepts the flash image `espflash` produces, loads the app, and runs
+it far enough to print. `esp_hal::init()` then does not return: no fault, and
+`-d guest_errors,unimp` reports no unmodelled-peripheral access, which is the
+signature of a spin rather than a crash. `Clocks::init()` configures the 480MHz
+PLL on every S3 preset — `_80MHz` included — so it is almost certainly polling a
+lock bit QEMU never sets. No clock setting avoids it.
+
+So CI asserts what is observable: the image boots, the bootloader loads it, and
+the app starts. That is a real regression test — it catches console and startup
+breakage, which is exactly how the `esp-println` `auto` device bug was found.
+
+Two things emulation will not give us, for different reasons:
+
+- **The signing path end-to-end**, because `init()` never returns. Wokwi supports
+  esp-hal and would likely get further, but needs a `WOKWI_CLI_TOKEN` secret.
+- **Entropy quality, ever.** QEMU's RNG model (`hw/misc/esp32_rng.c`) returns
+  host randomness from `qemu_guest_getrandom_nofail` regardless of whether the
+  SAR-ADC path is live. Statistical validation under emulation would pass
+  meaninglessly. That one needs silicon and nothing else will do.
+
 ## Status
 
-Compile-verified only. No ESP32-S3 was available; nothing here has run on
-silicon. Specifically unverified:
+Compile-verified, plus boot-verified under emulation. No ESP32-S3 was available;
+the signing path has not run anywhere. Specifically unverified:
 
 - that `ensure_randomness()` genuinely raises entropy quality on real hardware —
   the spike proves the source is *enabled*, not that its output is good. Statistical
