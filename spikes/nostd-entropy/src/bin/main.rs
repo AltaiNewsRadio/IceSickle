@@ -21,7 +21,7 @@
 use esp_backtrace as _;
 use esp_hal::clock::CpuClock;
 use esp_hal::main;
-use log::info;
+use esp_println::println;
 
 use icesickle_nostd::attestation::{Attestation, AttestationEvent};
 use icesickle_nostd::entropy::{EntropySource, trng_available};
@@ -40,33 +40,34 @@ const BUTTON_PIN: u8 = 0;
 )]
 #[main]
 fn main() -> ! {
-    esp_println::logger::init_logger_from_env();
-
+    // Output goes through `println!` rather than the `log` facade on purpose:
+    // an attestation is the device's product, not a diagnostic, and it should
+    // not disappear because a logger was misconfigured or filtered out.
     let config = esp_hal::Config::default().with_cpu_clock(CpuClock::max());
     let peripherals = esp_hal::init(config);
 
-    info!("IceSickle no_std entropy spike");
+    println!("IceSickle no_std entropy spike");
 
     // 1. The gate. Before any TrngSource exists, esp-hal refuses to hand out a
     //    Trng at all. This is the property the migration is buying, and the
     //    esp-idf prototype had no equivalent -- esp_fill_random() would have
     //    happily returned pseudo-random bytes here with no indication.
     if trng_available() {
-        info!("UNEXPECTED: true entropy reported available before TrngSource exists");
+        println!("UNEXPECTED: true entropy reported available before TrngSource exists");
     } else {
-        info!("gate holds: no true entropy available before TrngSource exists");
+        println!("gate holds: no true entropy available before TrngSource exists");
     }
 
     // 2. Enable the SAR-ADC entropy source. Consumes RNG and ADC1 for good.
     //    The RF subsystem stays off: this device is radio-silent by identity,
     //    which is exactly why the ADC path has to carry the entropy claim.
     let entropy_source = EntropySource::new(peripherals.RNG, peripherals.ADC1);
-    info!("TrngSource live: SAR-ADC entropy enabled, radio off");
+    println!("TrngSource live: SAR-ADC entropy enabled, radio off");
 
     if trng_available() {
-        info!("gate open: true entropy available");
+        println!("gate open: true entropy available");
     } else {
-        info!("UNEXPECTED: TrngSource is live but true entropy is unavailable");
+        println!("UNEXPECTED: TrngSource is live but true entropy is unavailable");
     }
 
     // 3. Sign. `entropy()` is infallible because `&entropy_source` is itself
@@ -77,14 +78,14 @@ fn main() -> ! {
 
     match Attestation::create(&entropy, event) {
         Ok(attestation) => {
-            info!("=== ATTESTATION ===");
-            info!("event:     {:?}", attestation.event());
-            info!("timestamp: {} ms since boot", attestation.timestamp_ms());
-            info!("payload:   {}", attestation.signed_payload_hex());
-            info!("pubkey:    {}", attestation.public_key_hex());
-            info!("signature: {}", attestation.signature_hex());
+            println!("=== ATTESTATION ===");
+            println!("event:     {:?}", attestation.event());
+            println!("timestamp: {} ms since boot", attestation.timestamp_ms());
+            println!("payload:   {}", attestation.signed_payload_hex());
+            println!("pubkey:    {}", attestation.public_key_hex());
+            println!("signature: {}", attestation.signature_hex());
         }
-        Err(e) => info!("attestation failed: {:?}", e),
+        Err(e) => println!("attestation failed: {:?}", e),
     }
 
     loop {

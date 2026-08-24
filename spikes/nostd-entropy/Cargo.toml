@@ -16,6 +16,8 @@ path = "./src/bin/main.rs"
 esp-hal = { version = "~1.1.0", features = ["esp32s3", "log-04", "unstable"] }
 
 esp-bootloader-esp-idf = { version = "0.5.0", features = ["esp32s3", "log-04"] }
+# `log` is not a direct dependency: this binary prints via esp-println. The
+# log-04 features above still route esp-hal's own internal records.
 log                    = "0.4.27"
 
 critical-section = "1.2.0"
@@ -24,7 +26,17 @@ esp-backtrace = { version = "0.19.0", features = [
   "panic-handler",
   "println",
 ] }
-esp-println = { version = "0.17.0", features = ["esp32s3", "log-04"] }
+# `auto` console selection is the default on hardware. It picks UART vs
+# USB-Serial-JTAG by reading USB_DEVICE_INT_RAW, which QEMU does not model --
+# the bit reads as garbage and output vanishes into an unwatched device. The
+# emulator job builds with `--no-default-features --features console-uart`.
+esp-println = { version = "0.17.0", default-features = false, features = [
+  "esp32s3",
+  "log-04",
+  "colors",
+  "critical-section",
+] }
+
 
 # Cryptography.
 #
@@ -43,6 +55,13 @@ zeroize = { version = "1", default-features = false, features = ["derive"] }
 serde = { version = "1", default-features = false, features = ["derive"] }
 postcard = { version = "1", default-features = false }
 heapless = { version = "0.8", default-features = false }
+
+[features]
+default = ["console-auto"]
+# Pick the console device by probing USB-Serial-JTAG at runtime (hardware).
+console-auto = ["esp-println/auto"]
+# Force UART0. Required under QEMU; also the right choice for a headless device.
+console-uart = ["esp-println/uart"]
 
 # For fine tuning these settings, please refer to https://doc.rust-lang.org/cargo/reference/profiles.html
 [profile.dev]

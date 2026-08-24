@@ -257,9 +257,12 @@ jobs:
       - name: Copy spike out of the repo's cargo-config scope
         run: cp -r spikes/nostd-entropy "$RUNNER_TEMP/spike"
 
+      # console-uart, not the default console-auto: `auto` probes a
+      # USB-Serial-JTAG register QEMU does not model, and the output would go to
+      # a device -nographic never reads.
       - name: Build firmware
         working-directory: ${{ runner.temp }}/spike
-        run: cargo build --release --locked
+        run: cargo build --release --locked --no-default-features --features console-uart
 
       - name: Install espflash
         run: |
