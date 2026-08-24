@@ -303,9 +303,13 @@ jobs:
             -nographic \
             -machine esp32s3 \
             -drive "file=$RUNNER_TEMP/flash.bin,if=mtd,format=raw" \
+            -d guest_errors,unimp \
+            -D "$RUNNER_TEMP/qemu-debug.log" \
             > "$RUNNER_TEMP/serial.log" 2>&1 || true
           echo "--- serial output ---"
           cat "$RUNNER_TEMP/serial.log"
+          echo "--- qemu guest_errors / unimplemented ---"
+          head -60 "$RUNNER_TEMP/qemu-debug.log" 2>/dev/null || echo "(no debug log)"
 
       - name: Verify the attestation it produced
         working-directory: ${{ runner.temp }}

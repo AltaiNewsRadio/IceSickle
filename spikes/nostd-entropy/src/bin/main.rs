@@ -43,10 +43,14 @@ fn main() -> ! {
     // Output goes through `println!` rather than the `log` facade on purpose:
     // an attestation is the device's product, not a diagnostic, and it should
     // not disappear because a logger was misconfigured or filtered out.
+    //
+    // Printed before esp_hal::init so that a hang or fault inside init is
+    // distinguishable from a console that is not wired up at all.
+    println!("IceSickle no_std entropy spike");
+
     let config = esp_hal::Config::default().with_cpu_clock(CpuClock::max());
     let peripherals = esp_hal::init(config);
-
-    println!("IceSickle no_std entropy spike");
+    println!("esp_hal::init done");
 
     // 1. The gate. Before any TrngSource exists, esp-hal refuses to hand out a
     //    Trng at all. This is the property the migration is buying, and the
