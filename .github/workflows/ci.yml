@@ -282,6 +282,10 @@ jobs:
 
       - name: Install QEMU
         run: |
+          # The prebuilt qemu-system-xtensa links libSDL2 even when run with
+          # -nographic, and the runner image does not ship it.
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq libsdl2-2.0-0 libslirp0
           curl -sSL -O "https://github.com/espressif/qemu/releases/download/$QEMU_REL/$QEMU_TAR"
           tar -xf "$QEMU_TAR" -C "$RUNNER_TEMP"
           "$RUNNER_TEMP/qemu/bin/qemu-system-xtensa" --version
