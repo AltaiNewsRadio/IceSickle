@@ -1,0 +1,24 @@
+[package]
+name = "verify-attestation"
+version = "0.1.0"
+edition = "2021"
+description = "Host-side verifier for IceSickle attestations captured from a serial log"
+license = "Apache-2.0"
+publish = false
+
+# Host tool. Builds on stable for the host target, unlike everything else in
+# this repo.
+#
+# NOTE: the repo root's .cargo/config.toml sets `target = xtensa-esp32s3-espidf`
+# and `[unstable] build-std`, and cargo discovers config by walking up from the
+# *working directory*. Building this crate from inside the repo therefore tries
+# to cross-compile it. Build it from outside instead:
+#
+#     cd /some/other/dir
+#     cargo test --manifest-path <repo>/tools/verify-attestation/Cargo.toml
+#
+# That is what CI does. Removing the need for it is part of deciding the
+# migration shape (whether the esp-idf crate stays at the repo root).
+
+[dependencies]
+ed25519-dalek = "2"

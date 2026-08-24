@@ -1,6 +1,8 @@
 # Build artifacts
 /target/
 /build/
+spikes/*/target/
+tools/*/target/
 
 # ESP-IDF
 /managed_components/
