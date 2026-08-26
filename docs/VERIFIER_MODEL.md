@@ -210,7 +210,10 @@ Need a human, in rough dependency order:
    a VOPRF's verify key is its issue key, so distributing the checker would
    distribute forgery power.
 2. **Epoch length**, per §3.2 — the time-bound versus anonymity-set knob. Now
-   doubly load-bearing: under D6 it is also the revocation granularity.
+   load-bearing three times over: under D6 it is also the revocation
+   granularity, and under D10 it caps the damage window of a leaked epoch key,
+   because an offline verifier may never receive a revocation and expiry is the
+   only bound that reaches it. **Next to decide.**
 3. **Beacon source.** An external public beacon (drand) is independently
    verifiable by anyone but needs the verifier to trust that beacon; a
    verifier-signed epoch token keeps it in-house but makes the verifier the

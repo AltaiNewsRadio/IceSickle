@@ -3,7 +3,8 @@
 Design note, not an implementation. It takes D4 in `docs/DECISIONS_V2_1.md` —
 blind Schnorr on ed25519, publicly verifiable — and develops it into a protocol:
 what the issuer signs, how a token binds to one attestation, what the ceremony
-looks like, what the verifier checks, and what the security argument rests on.
+looks like, what the verifier checks, how it comes to trust the key it checks
+against, and what the security argument rests on.
 
 Nothing here is built. `crates/icesickle-core` is still v1 and still proves only
 integrity.
@@ -105,7 +106,7 @@ This also keeps the entropy work load-bearing. `docs/NOSTD_ENTROPY_SPIKE.md`
 enforces TRNG quality at the moment a key is drawn; under v2 that moment moves
 from press time to provisioning time, but it is the same enforcement guarding the
 same secret. **Press-time entropy no longer protects the attestation key** — this
-is a real re-scoping of the spike, and §10 lists it as a follow-up.
+is a real re-scoping of the spike, and §11 lists it as a follow-up.
 
 Device-side blinding costs two scalar multiplications and two scalar additions
 per token, using `curve25519-dalek`, already a transitive dependency of
@@ -169,8 +170,9 @@ stripped or rewritten without invalidating `sig_P`.
 
 ## 6. Verification — the exact offline check
 
-A Verifier holds only the map `key_id -> X` and the epoch's beacon values. No
-network, no issuer callback (D3).
+A Verifier holds the pinned operator root `K_op`, the map `key_id -> X` it has
+authenticated against that root (§10), and the epoch's beacon values. No network,
+no issuer callback (D3).
 
 1. **Parse.** Split the 224-byte frame into `T || sig_P || sigma || P`. Wrong
    length, reject.
@@ -315,16 +317,66 @@ What is available:
 Batch size is an operational judgement. It should be set against a specific
 threat picture, not defaulted.
 
-## 10. Open items
+## 10. Issuer key distribution
 
-- **Issuer key distribution.** Verifiers need `key_id -> X` authentically, or
-  step 4 checks a signature against an attacker's key. The proposal: pin the map
-  at verifier provisioning, and — for operators who want it — publish each
-  epoch's `X` under D9's Merkle-anchoring exception, so a substituted key is
-  detectable after the fact. Needs deciding before any verifier ships.
-- **Epoch length.** Still open from `VERIFIER_MODEL.md`, and now doubly
-  load-bearing: it sets both the freshness/anonymity knob and the revocation
-  granularity.
+Settled as D10. The rationale, the costs and the small-deployment alternative are
+there; this is the format and the check.
+
+A verifier is provisioned once with a long-lived **operator root** public key
+`K_op`, pinned. Epoch keys then arrive as certificates it can authenticate for
+itself:
+
+| Field | Bytes | Notes |
+|---|---|---|
+| `key_id` | 2 | matches the payload field (§5) |
+| `X` | 32 | the epoch's issuer public key |
+| `valid_from` | 8 | unix seconds |
+| `valid_until` | 8 | unix seconds; see D10 on why expiry is load-bearing |
+| `sig` | 64 | Ed25519 under `K_op` over `DOM_CERT \|\| the 50 bytes above` |
+| **total** | **114** | |
+
+`DOM_CERT` is the domain separator `"IceSickle/epoch-cert/v2"`. It is prefixed to
+the signed input but is **not** transmitted — both sides know it — so a
+certificate is 114 bytes on the wire while the signature covers 50 bytes of
+fields plus the separator. Without it, an epoch certificate could in principle be
+reinterpreted as some other signature this protocol produces.
+
+Certificates never appear on the wire. The frame stays 224 bytes; they reach
+verifiers out of band, over any channel, because they carry their own proof.
+
+### The added check
+
+§6 step 2 selects the key. It gains a precondition:
+
+> **2. Select the key.** Decode `P` far enough to read `version` and `key_id`.
+> Look up `key_id` in the verifier's key map. A `key_id` with no entry, or an
+> epoch the operator has retired, rejects.
+>
+> An entry may only enter that map by one of two routes: pinned directly at
+> verifier provisioning, or installed from a certificate whose `sig` verifies
+> under the pinned `K_op` **and** whose `[valid_from, valid_until]` contains the
+> verifier's current time. Nothing else may write to it. A certificate that
+> fails either test is discarded, not cached for retry.
+
+Everything downstream is unchanged: step 4 still checks `s'*B == R' + c'*X`, and
+it now does so against an `X` the verifier can trace to something it was handed
+in person.
+
+### What this does not establish
+
+The certificate proves the operator issued that epoch key. It says nothing about
+*when the attestation was made* — that is still steps 6 and 8, the beacon and the
+Sink's ingest time. A valid certificate on a genuine token does not make the
+timestamp trustworthy, and the two are easy to conflate when reading step 2 as a
+"validity" check.
+
+## 11. Open items
+
+- **Epoch length.** Still open from `VERIFIER_MODEL.md`, and now load-bearing
+  three times over: it sets the freshness/anonymity knob, the revocation
+  granularity (D6), and — since D10 — the damage window of a leaked epoch key,
+  because an offline verifier may never receive a revocation and expiry is the
+  only bound that reaches it. **This is the next decision.**
 - **Beacon source.** Still open. An external beacon (drand) is independently
   verifiable but imports a trust assumption; a verifier-signed epoch token keeps
   it in-house and makes the operator the sole authority on time.

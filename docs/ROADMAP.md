@@ -73,12 +73,16 @@ is not, this is arguably a setting the prototype carried without needing it.
 
 Pointers, not summaries. Each of these is developed where it is linked.
 
-**v2 token protocol** — `docs/TOKEN_PROTOCOL.md` §10 is the live list:
+**v2 token protocol** — `docs/TOKEN_PROTOCOL.md` §11 is the live list:
 
-- Issuer key distribution. Named there as needing a decision *before any
-  verifier ships*, which makes it the most blocking item in this file.
-- Epoch length — sets both the freshness/anonymity knob and revocation
-  granularity.
+- ~~Issuer key distribution.~~ **Settled** as D10: verifiers pin a long-lived
+  operator root key and accept epoch keys by certificate, rather than pinning
+  the epoch keys themselves. `TOKEN_PROTOCOL.md` §10 has the format and the
+  check.
+- **Epoch length — now the most blocking item here.** It sets the
+  freshness/anonymity knob, the revocation granularity (D6), and, since D10, the
+  damage window of a leaked epoch key: an offline verifier may never receive a
+  revocation, so expiry is the only bound that reaches it.
 - Beacon source — external (drand) versus verifier-signed.
 - Entropy re-scoping — v2 moves key generation from press time to provisioning
   time, so `docs/NOSTD_ENTROPY_SPIKE.md` guards the right secret at the wrong
