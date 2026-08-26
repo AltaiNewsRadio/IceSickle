@@ -241,7 +241,8 @@ adversary here.
 
 Combined with the issuer never seeing `T` (§3), an operator holding every
 issuance transcript still cannot say which device produced a given attestation.
-That is what keeps the scheme inside `src/auth/mod.rs`: a token is a capability,
+That is what keeps the scheme inside `firmware/esp-idf/src/auth/mod.rs`: a token
+is a capability,
 used once and destroyed, not an identifier.
 
 The anonymity set is one epoch's batch. Small batches (§9) sharpen the seizure

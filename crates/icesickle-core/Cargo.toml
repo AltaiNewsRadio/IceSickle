@@ -8,17 +8,15 @@ publish = false
 
 # no_std, no allocator, no hardware. Every hardware dependency -- entropy and
 # the clock -- is a parameter supplied by the caller, which is what makes this
-# crate testable on a host with no ESP32 and no emulator.
+# crate testable on a host with no ESP32 and no emulator:
 #
-# NOTE: the repo root's .cargo/config.toml targets xtensa and sets build-std, and
-# cargo discovers config from the working directory. Test this from outside the
-# repo:
+#     cargo test -p icesickle-core
 #
-#     cd /some/other/dir
-#     cargo test --manifest-path <repo>/crates/icesickle-core/Cargo.toml
-#
-# That is the third crate to need this workaround. See the PR discussion about
-# moving the esp-idf crate off the repo root.
+# Test it alone, not as part of `cargo test --workspace`. Cargo's v2 resolver
+# unifies features across the packages selected by one invocation, and
+# verify-attestation depends on ed25519-dalek with `std`. Building both together
+# would hand this crate a std-enabled dependency graph and quietly mask a
+# no_std regression here.
 
 [dependencies]
 ed25519-dalek = { version = "2", default-features = false, features = ["zeroize"] }

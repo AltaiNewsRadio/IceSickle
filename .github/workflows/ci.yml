@@ -10,6 +10,11 @@ env:
   CARGO_TERM_COLOR: always
 
 jobs:
+  # esp-idf firmware (firmware/esp-idf).
+  #
+  # Built from its own directory, which is where its .cargo/config.toml lives.
+  # That config pins the xtensa target and build-std; keeping it inside the
+  # crate is the whole reason the host jobs below need no incantation.
   build:
     runs-on: ubuntu-latest
     steps:
@@ -21,9 +26,16 @@ jobs:
           default: true
           buildtargets: esp32s3
           ldproxy: true
-          # Pinned: `latest` makes espup hit the GitHub API per job, which
-          # rate-limited (403) once a third job started calling it.
+          # Pinned, but the pin is not what keeps this job green. espup queries
+          # the GitHub releases API to resolve the version either way, so a
+          # pinned version still spends a request.
           version: 1.97.0.0
+        env:
+          # Unauthenticated, that request is capped at 60/hour per IP and shared
+          # with every other Actions runner, which is how four jobs installing
+          # the same toolchain earn a 403. espup adds a Bearer header when this
+          # is set (espup src/toolchain/mod.rs), lifting the cap to 1000/hour.
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Cache cargo registry
         uses: actions/cache@v4
@@ -31,12 +43,13 @@ jobs:
           path: |
             ~/.cargo/registry
             ~/.cargo/git
-            target
-          key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
+            firmware/esp-idf/target
+          key: ${{ runner.os }}-cargo-${{ hashFiles('firmware/esp-idf/Cargo.lock') }}
           restore-keys: |
             ${{ runner.os }}-cargo-
 
       - name: Build
+        working-directory: firmware/esp-idf
         run: cargo build --release --locked
 
   lint:
@@ -50,9 +63,9 @@ jobs:
           default: true
           buildtargets: esp32s3
           ldproxy: true
-          # Pinned: `latest` makes espup hit the GitHub API per job, which
-          # rate-limited (403) once a third job started calling it.
           version: 1.97.0.0
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Cache cargo registry
         uses: actions/cache@v4
@@ -60,15 +73,17 @@ jobs:
           path: |
             ~/.cargo/registry
             ~/.cargo/git
-            target
-          key: ${{ runner.os }}-cargo-lint-${{ hashFiles('**/Cargo.lock') }}
+            firmware/esp-idf/target
+          key: ${{ runner.os }}-cargo-lint-${{ hashFiles('firmware/esp-idf/Cargo.lock') }}
           restore-keys: |
             ${{ runner.os }}-cargo-lint-
 
       - name: Check formatting
+        working-directory: firmware/esp-idf
         run: cargo fmt --all -- --check
 
       - name: Clippy
+        working-directory: firmware/esp-idf
         run: cargo clippy --all-targets --locked -- -D warnings
 
   # Enforce no-network policy (WiFi/BLE disabled by design).
@@ -76,6 +91,9 @@ jobs:
   # The pattern list is deliberately restricted to API symbols that cannot occur
   # in English prose. An earlier version matched the bare substring "ble", which
   # flagged "extensible", "stable" and "Unlinkable" in doc comments.
+  #
+  # Scope is the device code: both firmware crates and the shared core. The host
+  # verifier under tools/ is not part of the device and is not scanned.
   no-network-guard:
     runs-on: ubuntu-latest
     steps:
@@ -84,9 +102,9 @@ jobs:
       - name: Check for forbidden network symbols
         run: |
           echo "Scanning Rust sources for networking APIs..."
-          if grep -rnE --include="*.rs" \
+          if grep -rnE --include="*.rs" --exclude-dir=target \
             '\b(esp_wifi|esp_now|esp_bt|esp_bluedroid|esp_nimble|esp_netif|esp_eth|esp_tls|esp_http|esp_websocket|esp_mqtt|lwip)\b|\b(EspWifi|WifiDriver|AsyncWifi|BleDriver|BtDriver|EspNetif|EspEth|EspHttp|EspMqtt|TcpStream|TcpListener|UdpSocket)\b|\bstd::net\b' \
-            src/ spikes/; then
+            firmware/ crates/; then
             echo "::error::Network symbols found. IceSickle is designed to be network-free; see THREAT_MODEL.md."
             exit 1
           fi
@@ -109,6 +127,7 @@ jobs:
           echo "No radio crates in any dependency graph"
 
       - name: Verify sdkconfig disables networking
+        working-directory: firmware/esp-idf
         run: |
           echo "Checking sdkconfig.defaults..."
           if ! grep -q "CONFIG_BT_ENABLED=n" sdkconfig.defaults; then
@@ -121,16 +140,22 @@ jobs:
           fi
           echo "Network disabled in sdkconfig"
 
-  # Manifest / lockfile validation on stable, without the ESP toolchain.
+  # Manifest / lockfile validation for the esp-idf crate, on stable, without the
+  # ESP toolchain.
   #
-  # This is NOT a test job. Every module in src/ depends on esp-idf-*, so
-  # `cargo test` cannot run on a host target today; the unit tests in
-  # attestation.rs and cooldown.rs only execute when built for xtensa.
-  # Making them host-runnable requires target-gating the esp-idf deps.
+  # This is NOT a test job. Every module in firmware/esp-idf/src depends on
+  # esp-idf-*, so `cargo test` cannot run on a host target there; the unit tests
+  # in attestation.rs and cooldown.rs only execute when built for xtensa. Making
+  # them host-runnable requires target-gating the esp-idf deps -- or finishing
+  # the move to the no_std crate, which shares its logic through icesickle-core.
+  #
+  # The other two lockfiles are checked by `--locked` in the jobs that build
+  # them: firmware/nostd below, and the root workspace in `host`.
   manifest:
     runs-on: ubuntu-latest
     env:
-      # rust-toolchain.toml pins channel = "esp", which this job does not install.
+      # firmware/esp-idf/rust-toolchain.toml pins channel = "esp", which this
+      # job does not install.
       RUSTUP_TOOLCHAIN: stable
     steps:
       - uses: actions/checkout@v4
@@ -138,23 +163,22 @@ jobs:
       - uses: dtolnay/rust-toolchain@stable
 
       - name: Verify Cargo.lock is in sync with Cargo.toml
+        working-directory: firmware/esp-idf
         run: cargo metadata --locked --format-version 1 > /dev/null
 
       - name: Verify Cargo.lock is committed
-        run: test -f Cargo.lock || { echo "::error::Cargo.lock must be committed"; exit 1; }
+        run: test -f firmware/esp-idf/Cargo.lock || { echo "::error::Cargo.lock must be committed"; exit 1; }
 
-  # Bare-metal no_std entropy spike (spikes/nostd-entropy).
+  # Bare-metal no_std firmware (firmware/nostd) -- still the entropy spike, not
+  # yet the app: no button, no cooldown.
   #
-  # Built from a copy OUTSIDE the repo on purpose. Cargo discovers
-  # .cargo/config.toml by walking up from the working directory, and the repo
-  # root's config targets xtensa-esp32s3-espidf with
-  # `[unstable] build-std = ["std", "panic_abort"]`. Cargo *joins* config arrays
-  # rather than replacing them, so building the spike in place would try to
-  # build `std` for xtensa-esp32s3-none-elf and fail. Copying it out is the
-  # cheapest way to keep the spike hermetic while it lives alongside the
-  # esp-idf crate; if the migration lands, the no_std crate becomes the root
-  # and this step goes away.
-  spike-nostd:
+  # Built in place. It used to be copied to $RUNNER_TEMP first, because the repo
+  # root's .cargo/config.toml targeted xtensa-esp32s3-espidf with
+  # `build-std = ["std", "panic_abort"]`, cargo *joins* config arrays rather
+  # than replacing them, and the result tried to build `std` for
+  # xtensa-esp32s3-none-elf. The root config now lives inside firmware/esp-idf,
+  # so this crate sees only its own.
+  firmware-nostd:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -167,6 +191,8 @@ jobs:
           # no_std links directly; ldproxy is only needed for esp-idf `std`.
           ldproxy: false
           version: 1.97.0.0
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Cache cargo registry
         uses: actions/cache@v4
@@ -174,34 +200,26 @@ jobs:
           path: |
             ~/.cargo/registry
             ~/.cargo/git
-          key: ${{ runner.os }}-cargo-spike-${{ hashFiles('spikes/nostd-entropy/Cargo.lock') }}
+          key: ${{ runner.os }}-cargo-nostd-${{ hashFiles('firmware/nostd/Cargo.lock') }}
           restore-keys: |
-            ${{ runner.os }}-cargo-spike-
-
-      # Preserves the tree shape: the spike has a path dependency on
-      # ../../crates/icesickle-core, which a flat copy would break.
-      - name: Copy spike out of the repo's cargo-config scope
-        run: |
-          mkdir -p "$RUNNER_TEMP/ice/spikes" "$RUNNER_TEMP/ice/crates"
-          cp -r spikes/nostd-entropy "$RUNNER_TEMP/ice/spikes/nostd-entropy"
-          cp -r crates/icesickle-core "$RUNNER_TEMP/ice/crates/icesickle-core"
+            ${{ runner.os }}-cargo-nostd-
 
       - name: Build
-        working-directory: ${{ runner.temp }}/ice/spikes/nostd-entropy
+        working-directory: firmware/nostd
         run: cargo build --release --locked
 
       - name: Check formatting
-        working-directory: ${{ runner.temp }}/ice/spikes/nostd-entropy
+        working-directory: firmware/nostd
         run: cargo fmt --all -- --check
 
       # --lib --bins, not --all-targets: --all-targets builds the `lib test`
       # target, which needs the `test` crate and a #[panic_handler] that a
       # no_std binary cannot provide. There are no test targets here anyway.
       - name: Clippy
-        working-directory: ${{ runner.temp }}/ice/spikes/nostd-entropy
+        working-directory: firmware/nostd
         run: cargo clippy --lib --bins --locked -- -D warnings
 
-  # Platform-independent attestation logic, tested on the host.
+  # The host workspace: icesickle-core and the verify-attestation tool.
   #
   # This is where the signing path is actually covered. Ed25519 signing and
   # postcard encoding are both deterministic, so with the seed and clock passed
@@ -209,58 +227,39 @@ jobs:
   # which matters, because QEMU cannot reach this code (esp_hal::init() does not
   # return under it) and hardware is not available.
   #
-  # Runs from ${{ runner.temp }} for the usual reason: the repo root config
-  # would cross-compile it to xtensa.
-  core:
+  # Plain cargo from the repo root. No --manifest-path, no cd out of the
+  # checkout, no RUSTUP_TOOLCHAIN override: the root is a virtual workspace with
+  # no target pin and no toolchain pin.
+  host:
     runs-on: ubuntu-latest
-    env:
-      RUSTUP_TOOLCHAIN: stable
-      MANIFEST: ${{ github.workspace }}/crates/icesickle-core/Cargo.toml
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
         with:
           components: rustfmt, clippy
-
-      - name: Test
-        working-directory: ${{ runner.temp }}
-        run: cargo test --manifest-path "$MANIFEST" --locked
+          targets: thumbv7em-none-eabihf
 
       - name: Check formatting
-        working-directory: ${{ runner.temp }}
-        run: cargo fmt --manifest-path "$MANIFEST" --all -- --check
+        run: cargo fmt --all -- --check
 
       - name: Clippy
-        working-directory: ${{ runner.temp }}
-        run: cargo clippy --manifest-path "$MANIFEST" --all-targets --locked -- -D warnings
+        run: cargo clippy --workspace --all-targets --locked -- -D warnings
 
-  # Host-side verifier for attestations captured from serial output.
-  #
-  # Runs from ${{ runner.temp }} with --manifest-path, NOT from the checkout:
-  # cargo discovers .cargo/config.toml by walking up from the working directory,
-  # and the repo root's config would cross-compile this host tool to xtensa.
-  verify-tool:
-    runs-on: ubuntu-latest
-    env:
-      RUSTUP_TOOLCHAIN: stable
-      MANIFEST: ${{ github.workspace }}/tools/verify-attestation/Cargo.toml
-    steps:
-      - uses: actions/checkout@v4
-      - uses: dtolnay/rust-toolchain@stable
-        with:
-          components: rustfmt, clippy
+      # Separate `-p` invocations, not `--workspace`. Cargo's v2 resolver
+      # unifies features across the packages selected by a single invocation,
+      # and verify-attestation pulls ed25519-dalek with `std`. Testing them
+      # together would build icesickle-core against a std-enabled graph.
+      - name: Test icesickle-core
+        run: cargo test -p icesickle-core --locked
 
-      - name: Test
-        working-directory: ${{ runner.temp }}
-        run: cargo test --manifest-path "$MANIFEST" --locked
+      - name: Test verify-attestation
+        run: cargo test -p verify-attestation --locked
 
-      - name: Check formatting
-        working-directory: ${{ runner.temp }}
-        run: cargo fmt --manifest-path "$MANIFEST" --all -- --check
-
-      - name: Clippy
-        working-directory: ${{ runner.temp }}
-        run: cargo clippy --manifest-path "$MANIFEST" --all-targets --locked -- -D warnings
+      # The no_std guarantee, enforced rather than asserted in a comment. A
+      # bare-metal target has no `std` to fall back on, so an accidental `std`
+      # dependency -- direct, transitive, or feature-unified -- fails here.
+      - name: Build icesickle-core for a bare-metal target
+        run: cargo build -p icesickle-core --target thumbv7em-none-eabihf --locked
 
   # Boot the no_std firmware under Espressif's QEMU and verify what it emits.
   #
@@ -289,22 +288,16 @@ jobs:
           buildtargets: esp32s3
           ldproxy: false
           version: 1.97.0.0
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
       - uses: dtolnay/rust-toolchain@stable
-
-      # Preserves the tree shape: the spike has a path dependency on
-      # ../../crates/icesickle-core, which a flat copy would break.
-      - name: Copy spike out of the repo's cargo-config scope
-        run: |
-          mkdir -p "$RUNNER_TEMP/ice/spikes" "$RUNNER_TEMP/ice/crates"
-          cp -r spikes/nostd-entropy "$RUNNER_TEMP/ice/spikes/nostd-entropy"
-          cp -r crates/icesickle-core "$RUNNER_TEMP/ice/crates/icesickle-core"
 
       # console-uart, not the default console-auto: `auto` probes a
       # USB-Serial-JTAG register QEMU does not model, and the output would go to
       # a device -nographic never reads.
       - name: Build firmware
-        working-directory: ${{ runner.temp }}/ice/spikes/nostd-entropy
+        working-directory: firmware/nostd
         run: cargo build --release --locked --no-default-features --features console-uart
 
       - name: Install espflash
@@ -316,7 +309,7 @@ jobs:
           espflash --version
 
       - name: Build flash image
-        working-directory: ${{ runner.temp }}/ice/spikes/nostd-entropy
+        working-directory: firmware/nostd
         run: |
           espflash save-image \
             --chip esp32s3 \
@@ -362,15 +355,14 @@ jobs:
             || { echo "::error::app produced no output; console or startup regressed"; exit 1; }
           echo "image boots, bootloader loads it, app runs and prints"
 
+      # RUSTUP_TOOLCHAIN is set because the xtensa-toolchain step above made
+      # `esp` the default; the workspace root itself pins nothing.
       - name: Verify the attestation, if one was produced
-        working-directory: ${{ runner.temp }}
         env:
           RUSTUP_TOOLCHAIN: stable
         run: |
           if grep -q "payload:" "$RUNNER_TEMP/serial.log"; then
-            cargo run --quiet \
-              --manifest-path "$GITHUB_WORKSPACE/tools/verify-attestation/Cargo.toml" \
-              --locked -- "$RUNNER_TEMP/serial.log"
+            cargo run --quiet -p verify-attestation --locked -- "$RUNNER_TEMP/serial.log"
           else
             echo "::notice::No attestation under QEMU: esp_hal::init() does not return (see job comment). Signing is covered by the verify-attestation unit tests; end-to-end needs Wokwi or hardware."
           fi

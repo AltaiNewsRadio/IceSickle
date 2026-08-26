@@ -113,7 +113,7 @@ Verification is a local signature check. Consensus solves a
 mutually-distrusting-parties problem the single-operator model does not have. A
 public ledger's permanence and metadata leakage fight the secure-delete and
 no-persistent-record design, and the device cannot hold a wallet key — that is a
-persistent identity, forbidden by `src/auth/mod.rs`.
+persistent identity, forbidden by `firmware/esp-idf/src/auth/mod.rs`.
 
 **Narrow optional exception, Sink-side only.** Timestamp transparency via
 periodic **Merkle-root anchoring** (for example OpenTimestamps). Publishes one

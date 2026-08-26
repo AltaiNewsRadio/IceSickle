@@ -1,7 +1,7 @@
 # no_std entropy spike
 
-Spike, not a migration. Lives in `spikes/nostd-entropy/`, builds independently of
-the esp-idf crate at the repo root, and changes nothing about it.
+Spike, not a migration. Lives in `firmware/nostd/`, builds independently of the
+esp-idf crate in `firmware/esp-idf/`, and changes nothing about it.
 
 The question it answers: **what does the signing path look like when the entropy
 precondition is structural rather than assumed?**
@@ -68,9 +68,10 @@ gate holding before the source exists, then opening after.
 ## 2. Radio-silent by default; radios are opt-in tiers
 
 Radio silence is the device's identity, not a configuration. It is why
-`THREAT_MODEL.md`, the `no-network-guard` CI job, and `src/auth/mod.rs` exist,
-and this spike keeps all three as law. The guard now covers `spikes/` as well as
-`src/`, and additionally scans every manifest and lockfile for radio crates.
+`THREAT_MODEL.md`, the `no-network-guard` CI job, and
+`firmware/esp-idf/src/auth/mod.rs` exist, and this spike keeps all three as law.
+The guard covers every device crate — both firmware crates and `crates/` — and
+additionally scans every manifest and lockfile for radio crates.
 
 Attestations are **create-now / transmit-later**. Signing happens offline, with
 the RF subsystem off — which is exactly what makes the ADC entropy path

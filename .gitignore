@@ -1,13 +1,15 @@
 # Build artifacts
+# /target/ is the host workspace at the repo root; the rest are the crates that
+# build on their own, each with its own target dir.
 /target/
-/build/
-spikes/*/target/
+firmware/*/target/
+firmware/*/build/
 tools/*/target/
 crates/*/target/
 
-# ESP-IDF
-/managed_components/
-/dependencies.lock
+# ESP-IDF (firmware/esp-idf)
+managed_components/
+dependencies.lock
 sdkconfig
 sdkconfig.old
 
