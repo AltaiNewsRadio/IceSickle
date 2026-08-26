@@ -182,8 +182,11 @@ icesickle/
 │           └── entropy.rs   # SAR-ADC TrngSource, gated so a key cannot be
 │                            #   drawn before true entropy exists
 ├── docs/
+│   ├── ROADMAP.md       # Open work, and where each item's detail lives
 │   ├── ARCHITECTURE.md  # Architecture rationale
 │   ├── VERIFIER_MODEL.md      # What an attestation does and does not prove
+│   ├── TOKEN_PROTOCOL.md      # v2: blind-signed one-time tokens (design only)
+│   ├── DECISIONS_V2_1.md      # D1–D9, the settled architecture decisions
 │   └── NOSTD_ENTROPY_SPIKE.md # Why no_std, radio silence, emission discipline
 ├── THREAT_MODEL.md      # Explicit threat assumptions
 ├── SECURITY.md          # Vulnerability reporting
