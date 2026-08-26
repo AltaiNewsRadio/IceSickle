@@ -121,6 +121,90 @@ root hash per epoch, never attestation content or location, giving
 anti-backdating and censorship resistance to operators who want public
 accountability. Off by default.
 
+## D10 — Issuer key distribution: pin a root, not a map
+
+A Verifier holds `key_id -> X` and checks `sigma` under it (`TOKEN_PROTOCOL.md`
+§6 step 4). Substitute `X` and forgery is trivial, so `X` has to arrive
+authentically at a node that is **offline by design** (D3).
+
+The earlier sketch was to *pin the map* at verifier provisioning. **That works
+exactly once.** D6 makes revocation *be* epoch rotation, so `X` changes on a
+schedule — and a pinned map means physically revisiting every verifier at every
+rotation. The sketch and D6 were in direct tension; it was one line long, which
+is why nobody saw it.
+
+**Decision: pin one long-lived operator root key `K_op` at verifier
+provisioning.** Each epoch key then ships as a short certificate signed by it:
+
+```
+cert = (key_id, X, valid_from, valid_until)  ||  Sign_{K_op}(cert)
+```
+
+A verifier accepts a new epoch key **iff** the certificate verifies under its
+pinned root. Certificates are self-authenticating, so they travel over any
+untrusted channel — sneakernet, a radio burst, an email attachment, a QR code
+photographed off a screen — and rotation stops requiring physical access to
+every node.
+
+### Why this is not the device identity `auth.rs` forbids
+
+It looks like exactly that, and the distinction is the whole point of the rule:
+**the prohibition is on *device* identity.** The operator is a named party by
+construction — D1 defines "operator" as a role a newsroom or an NGO fills, and
+every attestation is already sealed to that operator's backend key. `K_op` says
+who issued a batch of tokens. It says nothing about which device spent one, and
+the blind signature (D4) is what guarantees the issuer itself cannot tell.
+
+### What it costs, named
+
+- **`K_op` is a single point of compromise.** Whoever holds it can mint epoch
+  keys every verifier will accept. The mitigation is operational rather than
+  cryptographic: it signs a handful of certificates a year, so it can stay
+  offline — on paper, on an air-gapped machine, in an HSM for operators who have
+  one. It is a smaller and more manageable secret than the issue key `x`, which
+  has to be live during a provisioning ceremony.
+- **Root rotation still needs physical access.** If `K_op` is compromised or
+  retired, every verifier must be re-provisioned. Accepted: it should be rare,
+  and every pinned-root scheme bottoms out somewhere.
+- **Early revocation of an epoch key is not solved.** If `X` leaks before
+  `valid_until`, a signed revocation has to reach verifiers that are offline by
+  design and may never receive it. **Expiry is therefore the real bound**, which
+  makes epoch length load-bearing for a *third* reason: it already sets the
+  freshness/anonymity knob and the revocation granularity, and it now caps the
+  damage window of a leaked epoch key. Decide it with this in view.
+- **Verifiers need a clock.** `valid_from`/`valid_until` presume one. That is
+  fine — a verifier is a laptop or a server, and the *device's* clocklessness is
+  precisely why §6 uses a beacon instead. But an offline verifier's clock is
+  attacker-influenceable: roll it back and an expired epoch key becomes
+  acceptable again. The beacon values a verifier already holds give a weak
+  monotonic floor, since it cannot have received round `N`'s value before round
+  `N` was published. That is a partial mitigation, not a fix. Stated rather than
+  solved.
+
+### The small-deployment mode, deliberately kept
+
+An operator running three verifiers who would rather not hold a long-lived
+signing key at all **may pin the map directly and re-provision on rotation**.
+That is the superseded sketch, retained as an explicit mode rather than a
+default: it removes the single point of compromise entirely, and pays for it by
+making every rotation a physical operation.
+
+Verifier implementations should support both, because the check is the same
+either way. The only difference is whether the pinned object is a root or a leaf.
+
+### Where D9's anchoring fits
+
+Merkle anchoring stays what D9 made it: an optional audit trail. Publishing each
+epoch's `X` lets a substitution be **detected after the fact**, which is worth
+having. It cannot be the mechanism, because checking it needs network access at
+verification time and D3 denies the verifier exactly that.
+
+### What it does not cost
+
+Nothing on the wire, and nothing in the firmware. The frame stays 224 bytes, the
+payload already carries `key_id` (§5), and certificates are held by verifiers out
+of band. The device never learns `K_op` exists.
+
 ---
 
 ## Still open
@@ -128,6 +212,10 @@ accountability. Off by default.
 D4 fixes the scheme, not the protocol. `docs/TOKEN_PROTOCOL.md` takes up the
 protocol: what the issuer blind-signs, how a token binds to a specific
 attestation, one-time versus reusable tokens, the provisioning ceremony and
-device-side blinding, the verifier's exact offline check, public-key
-distribution authenticity, and the unforgeability, unlinkability, and replay
-arguments.
+device-side blinding, the verifier's exact offline check, and the
+unforgeability, unlinkability, and replay arguments. Public-key distribution
+authenticity was on that list and is now D10; §10 of that document carries the
+certificate format and the verifier's added check.
+
+What remains open is tracked in `docs/ROADMAP.md`. **Epoch length is now the
+next thing to decide** — D10 made it load-bearing for a third reason.
