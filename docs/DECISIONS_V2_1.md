@@ -151,7 +151,8 @@ every node.
 It looks like exactly that, and the distinction is the whole point of the rule:
 **the prohibition is on *device* identity.** The operator is a named party by
 construction — D1 defines "operator" as a role a newsroom or an NGO fills, and
-every attestation is already sealed to that operator's backend key. `K_op` says
+every attestation is already destined for that operator's backend (whether it is
+*sealed* to it is the open question D11 surfaced). `K_op` says
 who issued a batch of tokens. It says nothing about which device spent one, and
 the blind signature (D4) is what guarantees the issuer itself cannot tell.
 
@@ -205,6 +206,93 @@ Nothing on the wire, and nothing in the firmware. The frame stays 224 bytes, the
 payload already carries `key_id` (§5), and certificates are held by verifiers out
 of band. The device never learns `K_op` exists.
 
+## D11 — Epoch length: two periods, and the anonymity floor under both
+
+"Epoch length" was being tracked as one knob. **The wire format already has
+two.** `TOKEN_PROTOCOL.md` §5 carries `key_id` and `beacon_round` as separate
+payload fields, and they answer different questions:
+
+| Period | Field | Governs |
+|---|---|---|
+| **Beacon round** | `beacon_round` | how tight the freshness lower bound is |
+| **Key epoch** | `key_id` | revocation granularity (D6), leaked-key damage window (D10) |
+
+Treating them as one number forced a trade that does not actually exist. They are
+hereby separate, with the rule that **the key epoch is an integer multiple of the
+beacon round** — so a key rotation lands on a round boundary and the coarser
+field never subdivides the finer one.
+
+### The constraint that binds them
+
+The anonymity set is not "one epoch's batch", as §7 currently says. It is the
+**intersection of every payload field an observer can read** — `key_id`,
+`beacon_round`, `region` (D8), `event` — so it is bounded by whichever of them is
+finest-grained.
+
+Two consequences fall straight out:
+
+- **Splitting the periods buys cheaper revocation for free.** With the key epoch
+  coarser than the beacon round, the beacon is already the binding constraint, so
+  shortening the key epoch costs no anonymity at all until it reaches the beacon
+  round. That is why the rule above is `>=` and not `==`.
+- **It does not buy anonymity.** No arrangement of these two numbers widens the
+  crowd beyond what the finest field allows. `region` is in that intersection
+  too: a fine-grained region code shrinks the crowd exactly as a short beacon
+  round does, which ties D8 to this decision more tightly than either document
+  previously admitted.
+
+### Decision: 7-day beacon round, 28-day key epoch
+
+**Beacon round: 7 days.** The reasoning is that the *upper* bound is already
+loose. §3.3 of `VERIFIER_MODEL.md` gets the upper bound from a co-signature at
+ingest — but this device is create-now / transmit-later by design, and an
+artifact may sit for days before it reaches anything that can co-sign it. The
+interval `[t, T]` is therefore wide because of `T`, and paying anonymity to
+tighten `t` buys very little. Anonymity is scarce here; lower-bound precision is
+not the scarce thing.
+
+**Key epoch: 28 days.** Four beacon rounds exactly. D10 made rotation cheap — a
+114-byte certificate over any untrusted channel, no physical access — which
+removes the reason long key epochs used to be attractive. 28 days caps the D10
+damage window at a month and is a plausible cadence for handing out fresh token
+batches anyway.
+
+### The floor, stated because the numbers cannot fix it
+
+Crowd size for one beacon round is roughly
+
+```
+fleet size  ×  attestations per device per round
+```
+
+A 50-device deployment where each device attests about once a week gives a crowd
+of ~50 per 7-day round. The same fleet on an hourly round gives a crowd of
+**well under one** — the attestation is effectively signed "by whoever was
+active that hour", and no choice of number repairs it.
+
+So: **below roughly a few dozen active devices per round, the beacon round
+provides no anonymity and this decision cannot supply any.** An operator in that
+position should treat the beacon as a pure freshness anchor, take unlinkability
+from relay mixing instead (the batch/delay/reorder model in `README.md`), and
+understand that attestations are linkable to a small group. That is a real limit
+of the design, not a tuning failure.
+
+### When to override
+
+Shorten the beacon round when the upper bound is tight — a deployment relaying
+promptly over a wired gateway in the same building, where `T` lands within
+minutes. There the lower bound *is* the limiting factor and the trade reverses.
+That is the deliberate setting `VERIFIER_MODEL.md` §3.2 asks for; 7 days is the
+default for a deployment that has not made that determination.
+
+### Interaction with the beacon source
+
+Still open, and this constrains it rather than settling it. Both remaining
+candidates work at a 7-day sampling period: drand publishes far faster than that
+and the device simply samples one round per period, and an operator-signed epoch
+token is issued on whatever period the operator picks. Sampling period and beacon
+native period are not the same thing.
+
 ---
 
 ## Still open
@@ -217,5 +305,8 @@ unforgeability, unlinkability, and replay arguments. Public-key distribution
 authenticity was on that list and is now D10; §10 of that document carries the
 certificate format and the verifier's added check.
 
-What remains open is tracked in `docs/ROADMAP.md`. **Epoch length is now the
-next thing to decide** — D10 made it load-bearing for a third reason.
+What remains open is tracked in `docs/ROADMAP.md`. **The next thing to decide is
+whether the payload is sealed or in the clear** — D1 and D2 say the device seals
+to the operator's backend key, `TOKEN_PROTOCOL.md` §5 and §6 read it in the
+clear, and D3 is why those cannot both stand. It surfaced while working out
+D11's anonymity set, which it also changes.

@@ -247,9 +247,16 @@ That is what keeps the scheme inside `crates/icesickle-core/src/auth.rs`: a toke
 is a capability,
 used once and destroyed, not an identifier.
 
-The anonymity set is one epoch's batch. Small batches (§9) sharpen the seizure
-picture and blunt this; the two pull in opposite directions and the balance is an
-operator's call, not a default.
+**The anonymity set is not one epoch's batch.** That was this document's earlier
+claim and it was too generous. D11 corrects it: the crowd is the *intersection*
+of every payload field a reader can see — `key_id`, `beacon_round`, `region`,
+`event` — so it is bounded by whichever is finest-grained, and in practice that
+is the beacon round.
+
+Small batches (§9) sharpen the seizure picture and blunt this further; the two
+pull in opposite directions and the balance is an operator's call, not a default.
+D11 also names the floor: below roughly a few dozen devices attesting per beacon
+round, the crowd is too small to hide in and no choice of period repairs it.
 
 ### Replay
 
@@ -372,14 +379,22 @@ timestamp trustworthy, and the two are easy to conflate when reading step 2 as a
 
 ## 11. Open items
 
-- **Epoch length.** Still open from `VERIFIER_MODEL.md`, and now load-bearing
-  three times over: it sets the freshness/anonymity knob, the revocation
-  granularity (D6), and — since D10 — the damage window of a leaked epoch key,
-  because an offline verifier may never receive a revocation and expiry is the
-  only bound that reaches it. **This is the next decision.**
-- **Beacon source.** Still open. An external beacon (drand) is independently
-  verifiable but imports a trust assumption; a verifier-signed epoch token keeps
-  it in-house and makes the operator the sole authority on time.
+- **Is the payload sealed, or in the clear?** Found while working out D11's
+  anonymity set, and it is not a wording problem. D1 and D2 both say the device
+  **seals payloads to the operator's backend key**. This document does not: §5
+  puts `P` in the frame unencrypted and §6 step 2 decodes it directly, with no
+  decryption anywhere. The two cannot both be right, and D3 is the reason —
+  distributed verifiers hold public material only, so a sealed `P` would need the
+  backend *private* key at every field node, which is exactly the forgery-power
+  distribution D4 refused. Whichever way it resolves changes who can read
+  `key_id`, `beacon_round` and `region`, and therefore changes D11's analysis
+  from "any observer" to "the operator". **Needs deciding before a Verifier and a
+  Sink are built as separate parties.**
+- **Beacon source.** Still open, though D11 narrows it: both candidates work at a
+  7-day sampling period, since the sampling period and the beacon's native period
+  are different things. An external beacon (drand) is independently verifiable
+  but imports a trust assumption; an operator-signed epoch token keeps it
+  in-house and makes the operator the sole authority on time.
 - **Entropy re-scoping.** `docs/NOSTD_ENTROPY_SPIKE.md` guards press-time key
   generation. Under §3 the guarded moment moves to provisioning. The enforcement
   is still needed and still guards the same secret, but the doc and the spike
