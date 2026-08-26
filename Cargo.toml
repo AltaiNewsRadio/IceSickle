@@ -1,48 +1,29 @@
-[package]
-name = "icesickle"
-version = "0.1.0"
-edition = "2021"
-license = "Apache-2.0"
-description = "Hardware-assisted, ephemeral-key attestation device"
-repository = "https://github.com/Mezo-oz/IceSickle"
-readme = "README.md"
-keywords = ["embedded", "attestation", "esp32", "cryptography"]
-categories = ["embedded", "cryptography", "no-std"]
-
-[dependencies]
-# ESP-IDF framework bindings
-esp-idf-sys = { version = "0.37", features = ["binstart"] }
-esp-idf-hal = "0.46"
-esp-idf-svc = { version = "0.52", features = ["alloc"] }
-
-# Cryptography
-ed25519-dalek = { version = "2", default-features = false, features = ["rand_core", "zeroize"] }
-rand_core = "0.6"
-
-# Security
-zeroize = { version = "1", features = ["derive"] }
-
-# Serialization (for attestation payloads).
-# `std` is required: postcard's Error only implements `std::error::Error` via
-# serde's `ser::StdError` alias, which is the no_std shim unless serde/std is on.
-# Without it, `postcard::to_allocvec(..)?` cannot convert into `anyhow::Error`.
-serde = { version = "1", features = ["derive"] }
-postcard = { version = "1", features = ["alloc"] }
-
-# Utilities
-anyhow = "1"
-log = "0.4"
-heapless = "0.8"
-
-[build-dependencies]
-embuild = "0.33"
-
-[profile.release]
-opt-level = "s"      # size optimization
-lto = true
-codegen-units = 1
-debug = false
-
-[profile.dev]
-opt-level = 1        # some optimization even in dev (ESP32 is slow otherwise)
-debug = true
+# Host-side workspace root.
+#
+# Deliberately a *virtual* manifest with no build target of its own. The repo
+# root used to be the esp-idf firmware package, which meant a
+# `.cargo/config.toml` here pinning `target = xtensa-esp32s3-espidf` and
+# `[unstable] build-std`. Cargo discovers config by walking up from the working
+# directory, so every host crate in the tree inherited that pin and had to be
+# built from *outside* the repo to escape it. Four crates needed that
+# workaround; v2 would have added three more.
+#
+# So the firmware moved under `firmware/`, taking its config with it, and what
+# is left at the root is the part that builds for the host on stable:
+#
+#     cargo test              # everything here, no incantation
+#
+# The firmware crates are excluded rather than members: each has its own
+# toolchain pin, its own target, and its own lockfile, and none of that survives
+# being unified into one workspace.
+#
+#     cd firmware/esp-idf && cargo build --release    # xtensa, esp toolchain
+#     cd firmware/nostd   && cargo build --release    # xtensa bare-metal
+#
+[workspace]
+resolver = "2"
+members = [
+    "crates/icesickle-core",
+    "tools/verify-attestation",
+]
+exclude = ["firmware"]

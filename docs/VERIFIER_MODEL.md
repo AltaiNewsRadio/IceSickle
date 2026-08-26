@@ -75,7 +75,8 @@ is not obtainable at all, at any price, and §6 deals with why.
 
 ### 3.1 Authorization: blind-signed one-time tokens
 
-`src/auth/mod.rs` already names this as the V1.1+ plan, so this is developing an
+`firmware/esp-idf/src/auth/mod.rs` already names this as the V1.1+ plan, so this
+is developing an
 existing decision rather than proposing a new one:
 
 > **Unlinkable one-time tokens**: Verifier issues blinded tokens; device signs
@@ -183,7 +184,8 @@ verifiable as integrity-only.
 **No offline device can prove a human physically pressed a button.** It can prove
 its firmware signed a claim that one was. Distinguishing those requires proving
 the firmware was unmodified, which requires a device identity key and a remote
-attestation protocol — explicitly forbidden by `src/auth/mod.rs`, and rightly so,
+attestation protocol — explicitly forbidden by `firmware/esp-idf/src/auth/mod.rs`,
+and rightly so,
 because that key is exactly the linkable identifier the whole design exists to
 avoid.
 
@@ -221,6 +223,6 @@ Need a human, in rough dependency order:
 
 ## Status
 
-No code. Nothing here is implemented and nothing in `spikes/nostd-entropy/` or
+No code. Nothing here is implemented and nothing in `firmware/nostd/` or
 the esp-idf crate depends on it. The payload is still v1 and still proves only
 integrity.

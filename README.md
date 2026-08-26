@@ -125,12 +125,27 @@ cargo install espflash
 
 ### Build and Flash
 
-```bash
-# Build
-cargo build --release
+Each firmware crate is built from its own directory. That is where its
+`.cargo/config.toml` lives — target, linker and runner all come from there, and
+cargo reads config by walking up from the working directory, not from the
+manifest.
 
-# Flash and monitor (connect ESP32-S3 via USB)
-cargo run --release
+```bash
+# esp-idf prototype: the complete app today
+cd firmware/esp-idf
+cargo build --release
+cargo run --release        # flash and monitor (ESP32-S3 over USB)
+
+# bare-metal esp-hal: the entropy spike, where the migration is heading
+cd firmware/nostd
+cargo build --release
+```
+
+The host side needs none of that — no ESP toolchain, no target flag:
+
+```bash
+cargo test -p icesickle-core        # the signing path, byte-pinned
+cargo test -p verify-attestation    # the host verifier
 ```
 
 ### Output
@@ -145,16 +160,23 @@ Press the BOOT button (GPIO0) to generate an attestation:
 
 ```
 icesickle/
-├── src/
-│   ├── main.rs          # Entry point, event loop
-│   ├── attestation.rs   # Core signing logic, ephemeral keys
-│   ├── auth/            # Authorization primitives (V1.1+)
-│   │   └── mod.rs       # Capability-based, not identity-based
-│   ├── button.rs        # GPIO event detection
-│   ├── cooldown.rs      # Physical rate limiting
-│   └── entropy.rs       # Hardware RNG wrapper
-├── spikes/
-│   └── nostd-entropy/   # no_std esp-hal spike: entropy-enforced signing
+├── Cargo.toml           # Virtual workspace: the host crates below, no target pin
+├── crates/
+│   └── icesickle-core/  # Payload encoding, padding, signing. no_std, host-tested
+├── tools/
+│   └── verify-attestation/  # Host verifier for attestations off a serial log
+├── firmware/            # Each crate owns its own target, toolchain and lockfile
+│   ├── esp-idf/         # The original prototype; the complete app today
+│   │   ├── .cargo/      # xtensa-esp32s3-espidf + build-std, scoped to here
+│   │   └── src/
+│   │       ├── main.rs          # Entry point, event loop
+│   │       ├── attestation.rs   # Core signing logic, ephemeral keys
+│   │       ├── auth/            # Authorization primitives (V1.1+)
+│   │       │   └── mod.rs       # Capability-based, not identity-based
+│   │       ├── button.rs        # GPIO event detection
+│   │       ├── cooldown.rs      # Physical rate limiting
+│   │       └── entropy.rs       # Hardware RNG wrapper
+│   └── nostd/           # Bare-metal esp-hal: entropy spike, not yet the app
 ├── docs/
 │   ├── ARCHITECTURE.md  # Architecture rationale
 │   ├── VERIFIER_MODEL.md      # What an attestation does and does not prove
@@ -177,8 +199,8 @@ See [THREAT_MODEL.md](THREAT_MODEL.md) for detailed analysis.
 **Conditional, not yet guaranteed:**
 - *True hardware entropy.* The RNG is only a true RNG while the RF subsystem or
   an ADC entropy source is live. With radios off, that means the SAR-ADC path,
-  which is brought up explicitly in `spikes/nostd-entropy/` but **not** in the
-  esp-idf crate at the repo root. Unvalidated on hardware either way.
+  which is brought up explicitly in `firmware/nostd/` but **not** in
+  `firmware/esp-idf/`. Unvalidated on hardware either way.
 
 **Non-goals:**
 - Device identity or authentication

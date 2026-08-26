@@ -113,10 +113,13 @@ transport to measure.
 
 ## Running the core tests
 
-The repo root's `.cargo/config.toml` targets xtensa and sets `build-std`, and cargo
-discovers config from the working directory, so run from outside the repo:
+From the repo root:
 
 ```sh
-cd /some/other/dir
-cargo test --manifest-path <repo>/crates/icesickle-core/Cargo.toml
+cargo test -p icesickle-core
 ```
+
+Alone, not `--workspace`: cargo's v2 resolver unifies features across the packages
+one invocation selects, and `verify-attestation` pulls `ed25519-dalek` with `std`.
+Testing them together builds `icesickle-core` against a std-enabled graph, which
+would mask exactly the regression the `no_std` build in CI is there to catch.
