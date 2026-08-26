@@ -209,11 +209,13 @@ Need a human, in rough dependency order:
    public verifiability: verification is distributed to offline field nodes, and
    a VOPRF's verify key is its issue key, so distributing the checker would
    distribute forgery power.
-2. **Epoch length**, per §3.2 — the time-bound versus anonymity-set knob. Now
-   load-bearing three times over: under D6 it is also the revocation
-   granularity, and under D10 it caps the damage window of a leaked epoch key,
-   because an offline verifier may never receive a revocation and expiry is the
-   only bound that reaches it. **Next to decide.**
+2. ~~**Epoch length.**~~ **Settled** as D11, which splits it into two periods
+   the wire format already had: a 7-day **beacon round** and a 28-day **key
+   epoch**. §3.2's framing below is superseded on one point — the anonymity set
+   is the intersection of every readable payload field, not one epoch's batch,
+   so `region` (D8) constrains it too. D11 also names the floor: below roughly a
+   few dozen devices attesting per round there is no crowd, and no period
+   repairs it.
 3. **Beacon source.** An external public beacon (drand) is independently
    verifiable by anyone but needs the verifier to trust that beacon; a
    verifier-signed epoch token keeps it in-house but makes the verifier the

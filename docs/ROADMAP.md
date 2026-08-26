@@ -79,10 +79,15 @@ Pointers, not summaries. Each of these is developed where it is linked.
   operator root key and accept epoch keys by certificate, rather than pinning
   the epoch keys themselves. `TOKEN_PROTOCOL.md` §10 has the format and the
   check.
-- **Epoch length — now the most blocking item here.** It sets the
-  freshness/anonymity knob, the revocation granularity (D6), and, since D10, the
-  damage window of a leaked epoch key: an offline verifier may never receive a
-  revocation, so expiry is the only bound that reaches it.
+- ~~Epoch length.~~ **Settled** as D11: a 7-day beacon round and a 28-day key
+  epoch, split apart because `beacon_round` and `key_id` were always separate
+  payload fields answering different questions.
+- **Is the payload sealed, or in the clear? — now the most blocking item here.**
+  D1 and D2 say the device seals payloads to the operator's backend key;
+  `TOKEN_PROTOCOL.md` §5 and §6 read the payload in the clear. D3 is why they
+  conflict. It has to resolve before a Verifier and a Sink are built as separate
+  parties, and it changes who can read the fields D11's anonymity analysis rests
+  on.
 - Beacon source — external (drand) versus verifier-signed.
 - Entropy re-scoping — v2 moves key generation from press time to provisioning
   time, so `docs/NOSTD_ENTROPY_SPIKE.md` guards the right secret at the wrong
