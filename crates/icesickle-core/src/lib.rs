@@ -1,4 +1,9 @@
-//! Platform-independent IceSickle attestation logic.
+//! Platform-independent IceSickle device logic.
+//!
+//! Three things live here: the attestation itself, at the crate root; the
+//! debounced button state machine in [`button`]; and the rate limit in
+//! [`cooldown`]. They share one rule — **no hardware, and no clock of their
+//! own**. Every reading a decision depends on arrives as a parameter.
 //!
 //! Everything here is deterministic. Ed25519 signing is deterministic by
 //! construction, and postcard encoding is deterministic by requirement, so the
@@ -13,12 +18,21 @@
 //! (`esp_hal::init()` does not return under it; see
 //! `docs/NOSTD_ENTROPY_SPIKE.md`).
 //!
+//! [`button`] and [`cooldown`] are here for the same reason. Their esp-idf
+//! ancestors read `esp_timer_get_time()` internally and, in the cooldown's
+//! case, kept state in a `static`, so neither could be exercised without an
+//! ESP32 and neither had a test worth the name. Taking `now_ms` as an argument
+//! is the entire difference between that and the suites in those modules.
+//!
 //! `no_std` and allocator-free: postcard is built without its `alloc` feature,
 //! so `to_allocvec` is unreachable and a signed payload cannot end up on a heap.
 //!
 //! [`Trng`]: https://docs.rs/esp-hal/latest/esp_hal/rng/struct.Trng.html
 
 #![no_std]
+
+pub mod button;
+pub mod cooldown;
 
 use ed25519_dalek::{Signer, SigningKey};
 use serde::{Deserialize, Serialize};

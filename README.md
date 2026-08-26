@@ -162,7 +162,11 @@ Press the BOOT button (GPIO0) to generate an attestation:
 icesickle/
 ├── Cargo.toml           # Virtual workspace: the host crates below, no target pin
 ├── crates/
-│   └── icesickle-core/  # Payload encoding, padding, signing. no_std, host-tested
+│   └── icesickle-core/  # no_std, host-tested. Takes the clock as a parameter,
+│       └── src/         #   which is what makes all of it testable off-device
+│           ├── lib.rs       # Payload encoding, fixed-length padding, signing
+│           ├── button.rs    # Debounce state machine (no GPIO)
+│           └── cooldown.rs  # Rate limit state machine (no clock of its own)
 ├── tools/
 │   └── verify-attestation/  # Host verifier for attestations off a serial log
 ├── firmware/            # Each crate owns its own target, toolchain and lockfile
@@ -176,7 +180,12 @@ icesickle/
 │   │       ├── button.rs        # GPIO event detection
 │   │       ├── cooldown.rs      # Physical rate limiting
 │   │       └── entropy.rs       # Hardware RNG wrapper
-│   └── nostd/           # Bare-metal esp-hal: entropy spike, not yet the app
+│   └── nostd/           # Bare-metal esp-hal: the migration target
+│       └── src/
+│           ├── bin/main.rs  # Entropy gate, then the button event loop
+│           ├── button.rs    # GPIO binding; active-low is the only fact here
+│           └── entropy.rs   # SAR-ADC TrngSource, gated so a key cannot be
+│                            #   drawn before true entropy exists
 ├── docs/
 │   ├── ARCHITECTURE.md  # Architecture rationale
 │   ├── VERIFIER_MODEL.md      # What an attestation does and does not prove

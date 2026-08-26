@@ -169,8 +169,8 @@ jobs:
       - name: Verify Cargo.lock is committed
         run: test -f firmware/esp-idf/Cargo.lock || { echo "::error::Cargo.lock must be committed"; exit 1; }
 
-  # Bare-metal no_std firmware (firmware/nostd) -- still the entropy spike, not
-  # yet the app: no button, no cooldown.
+  # Bare-metal no_std firmware (firmware/nostd). It has the trigger and the rate
+  # limit now, so it is no longer only an entropy spike.
   #
   # Built in place. It used to be copied to $RUNNER_TEMP first, because the repo
   # root's .cargo/config.toml targeted xtensa-esp32s3-espidf with
@@ -351,7 +351,7 @@ jobs:
         run: |
           grep -q "Loaded app from partition" "$RUNNER_TEMP/serial.log" \
             || { echo "::error::bootloader did not load the app"; exit 1; }
-          grep -q "IceSickle no_std entropy spike" "$RUNNER_TEMP/serial.log" \
+          grep -q "IceSickle no_std firmware" "$RUNNER_TEMP/serial.log" \
             || { echo "::error::app produced no output; console or startup regressed"; exit 1; }
           echo "image boots, bootloader loads it, app runs and prints"
 

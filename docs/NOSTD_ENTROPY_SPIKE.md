@@ -148,5 +148,8 @@ the signing path has not run anywhere. Specifically unverified:
 - power and timing cost of holding the SAR ADC on continuously.
 - whether `esp-bootloader-esp-idf`'s app descriptor path boots as expected.
 
-No button: the trigger is not part of the signing path, and leaving it out keeps
-the spike's diff readable.
+The button and the cooldown have since been ported in, so the trigger is no
+longer missing. Nothing this document says about entropy changes, but the moment
+a key is drawn has moved from boot to a debounced press — and
+`docs/TOKEN_PROTOCOL.md` §3 moves it again, to provisioning time, which is the
+re-scoping that section's follow-up list already names.
