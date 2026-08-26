@@ -26,9 +26,16 @@ jobs:
           default: true
           buildtargets: esp32s3
           ldproxy: true
-          # Pinned: `latest` makes espup hit the GitHub API per job, which
-          # rate-limited (403) once a third job started calling it.
+          # Pinned, but the pin is not what keeps this job green. espup queries
+          # the GitHub releases API to resolve the version either way, so a
+          # pinned version still spends a request.
           version: 1.97.0.0
+        env:
+          # Unauthenticated, that request is capped at 60/hour per IP and shared
+          # with every other Actions runner, which is how four jobs installing
+          # the same toolchain earn a 403. espup adds a Bearer header when this
+          # is set (espup src/toolchain/mod.rs), lifting the cap to 1000/hour.
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Cache cargo registry
         uses: actions/cache@v4
@@ -57,6 +64,8 @@ jobs:
           buildtargets: esp32s3
           ldproxy: true
           version: 1.97.0.0
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Cache cargo registry
         uses: actions/cache@v4
@@ -182,6 +191,8 @@ jobs:
           # no_std links directly; ldproxy is only needed for esp-idf `std`.
           ldproxy: false
           version: 1.97.0.0
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Cache cargo registry
         uses: actions/cache@v4
@@ -277,6 +288,8 @@ jobs:
           buildtargets: esp32s3
           ldproxy: false
           version: 1.97.0.0
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
       - uses: dtolnay/rust-toolchain@stable
 
