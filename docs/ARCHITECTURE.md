@@ -208,9 +208,12 @@ and becomes a property of the dependency graph, since nothing links a radio
 stack in the first place. The `no-network-guard` CI job enforces that directly
 on the sources and every lockfile.
 
-The memory-protection and stack-canary settings have **no bare-metal
-equivalent configured today**. That is a real loss against the prototype, not a
-simplification, and it is unlisted work rather than a decision.
+The memory-protection and stack-canary settings are tracked in
+[ROADMAP.md](ROADMAP.md), which corrects this section on one point: the stack
+guard is **not** entirely absent. esp-hal watches a sentinel near the stack's
+end by default, so overflow is already caught; what is missing is the per-frame
+canary `-fstack-protector-strong` provided. Memory protection is genuinely
+absent, and esp-hal ships no driver for it.
 
 ## Future Extensions
 
