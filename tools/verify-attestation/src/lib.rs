@@ -186,7 +186,7 @@ mod tests {
         payload[..4].copy_from_slice(&[1, 0, 0, 42]); // encoded head, rest is padding
         let sig = sk.sign(&payload);
         format!(
-            "INFO - IceSickle no_std entropy spike\n\
+            "INFO - IceSickle no_std firmware\n\
              INFO - gate holds: no true entropy available before TrngSource exists\n\
              INFO - TrngSource live: SAR-ADC entropy enabled, radio off\n\
              INFO - gate open: true entropy available\n\
