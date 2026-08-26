@@ -198,14 +198,19 @@ The output module is intentionally minimal and easily replaceable.
 
 ## Configuration
 
-ESP-IDF sdkconfig settings:
+This section described ESP-IDF `sdkconfig` settings that switched WiFi and
+Bluetooth off (`CONFIG_BT_ENABLED=n`, `CONFIG_ESP_WIFI_ENABLED=n`) plus memory
+protection and stack canaries.
 
-| Setting | Value | Rationale |
-|---------|-------|-----------|
-| `CONFIG_BT_ENABLED` | n | Reduce attack surface |
-| `CONFIG_ESP_WIFI_ENABLED` | n | Reduce attack surface |
-| `CONFIG_ESP_SYSTEM_MEMPROT_FEATURE` | y | Memory protection |
-| `CONFIG_COMPILER_STACK_CHECK_MODE_STRONG` | y | Stack canaries |
+It no longer applies. The esp-idf crate is retired, and bare-metal `no_std` has
+no `sdkconfig`: radio silence stops being a setting that has to be maintained
+and becomes a property of the dependency graph, since nothing links a radio
+stack in the first place. The `no-network-guard` CI job enforces that directly
+on the sources and every lockfile.
+
+The memory-protection and stack-canary settings have **no bare-metal
+equivalent configured today**. That is a real loss against the prototype, not a
+simplification, and it is unlisted work rather than a decision.
 
 ## Future Extensions
 

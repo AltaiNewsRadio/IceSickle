@@ -1,24 +1,26 @@
 # Host-side workspace root.
 #
 # Deliberately a *virtual* manifest with no build target of its own. The repo
-# root used to be the esp-idf firmware package, which meant a
-# `.cargo/config.toml` here pinning `target = xtensa-esp32s3-espidf` and
-# `[unstable] build-std`. Cargo discovers config by walking up from the working
-# directory, so every host crate in the tree inherited that pin and had to be
-# built from *outside* the repo to escape it. Four crates needed that
-# workaround; v2 would have added three more.
+# root was once the firmware package itself, which meant a `.cargo/config.toml`
+# here pinning an xtensa target and `build-std`. Cargo discovers config by
+# walking up from the working directory, so every host crate inherited that pin
+# and had to be built from *outside* the repo to escape it.
 #
-# So the firmware moved under `firmware/`, taking its config with it, and what
-# is left at the root is the part that builds for the host on stable:
+# The firmware now lives under `firmware/` and owns that config, so what is left
+# at the root builds for the host on stable with no incantation:
 #
-#     cargo test              # everything here, no incantation
+#     cargo test -p icesickle-core
+#     cargo test -p verify-attestation
 #
-# The firmware crates are excluded rather than members: each has its own
-# toolchain pin, its own target, and its own lockfile, and none of that survives
-# being unified into one workspace.
+# Separately, not `--workspace`: cargo's v2 resolver unifies features across the
+# packages one invocation selects, and verify-attestation pulls ed25519-dalek
+# with `std`, which would build icesickle-core against a std-enabled graph and
+# hide a no_std regression.
 #
-#     cd firmware/esp-idf && cargo build --release    # xtensa, esp toolchain
-#     cd firmware/nostd   && cargo build --release    # xtensa bare-metal
+# The firmware is excluded rather than a member: it has its own toolchain pin,
+# target and lockfile, none of which survive being unified into one workspace.
+#
+#     cd firmware/nostd && cargo build --release
 #
 [workspace]
 resolver = "2"

@@ -1,7 +1,9 @@
 # no_std entropy spike
 
-Spike, not a migration. Lives in `firmware/nostd/`, builds independently of the
-esp-idf crate in `firmware/esp-idf/`, and changes nothing about it.
+Written as a spike alongside the esp-idf prototype. That prototype has since
+been retired and this is now the firmware; the document is kept as the record of
+*why*, because the entropy argument below is the reason the migration happened
+at all.
 
 The question it answers: **what does the signing path look like when the entropy
 precondition is structural rather than assumed?**
@@ -69,8 +71,8 @@ gate holding before the source exists, then opening after.
 
 Radio silence is the device's identity, not a configuration. It is why
 `THREAT_MODEL.md`, the `no-network-guard` CI job, and
-`firmware/esp-idf/src/auth/mod.rs` exist, and this spike keeps all three as law.
-The guard covers every device crate — both firmware crates and `crates/` — and
+`crates/icesickle-core/src/auth.rs` exist, and this spike keeps all three as law.
+The guard covers every device crate — the firmware and `crates/` — and
 additionally scans every manifest and lockfile for radio crates.
 
 Attestations are **create-now / transmit-later**. Signing happens offline, with
