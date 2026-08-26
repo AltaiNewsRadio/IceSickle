@@ -125,20 +125,15 @@ cargo install espflash
 
 ### Build and Flash
 
-Each firmware crate is built from its own directory. That is where its
+The firmware is built from its own directory. That is where its
 `.cargo/config.toml` lives — target, linker and runner all come from there, and
 cargo reads config by walking up from the working directory, not from the
 manifest.
 
 ```bash
-# esp-idf prototype: the complete app today
-cd firmware/esp-idf
-cargo build --release
-cargo run --release        # flash and monitor (ESP32-S3 over USB)
-
-# bare-metal esp-hal: the entropy spike, where the migration is heading
 cd firmware/nostd
 cargo build --release
+cargo run --release        # flash and monitor (ESP32-S3 over USB)
 ```
 
 The host side needs none of that — no ESP toolchain, no target flag:
@@ -152,9 +147,17 @@ cargo test -p verify-attestation    # the host verifier
 
 Press the BOOT button (GPIO0) to generate an attestation:
 
-```json
-{"event":"ButtonPress { gpio: 0 }","ts":12345,"pk":"a1b2c3...","sig":"d4e5f6..."}
 ```
+=== ATTESTATION ===
+event:     ButtonPress { gpio: 0 }
+timestamp: 12345 ms since boot
+payload:   010000b96007000000000000000000000000000000000000000000000000000000
+pubkey:    ea4a6c63e29c520abef5507b132ec5f9954776aebebe7b92421eea691446d22c
+signature: d55bcb74ebbf7afa...
+```
+
+`tools/verify-attestation` parses exactly this off a captured serial log and
+checks the signature over the padded payload.
 
 ## Project Structure
 
@@ -165,22 +168,14 @@ icesickle/
 │   └── icesickle-core/  # no_std, host-tested. Takes the clock as a parameter,
 │       └── src/         #   which is what makes all of it testable off-device
 │           ├── lib.rs       # Payload encoding, fixed-length padding, signing
+│           ├── auth.rs      # No code: the rule that keeps identity out
 │           ├── button.rs    # Debounce state machine (no GPIO)
 │           └── cooldown.rs  # Rate limit state machine (no clock of its own)
 ├── tools/
 │   └── verify-attestation/  # Host verifier for attestations off a serial log
-├── firmware/            # Each crate owns its own target, toolchain and lockfile
-│   ├── esp-idf/         # The original prototype; the complete app today
-│   │   ├── .cargo/      # xtensa-esp32s3-espidf + build-std, scoped to here
-│   │   └── src/
-│   │       ├── main.rs          # Entry point, event loop
-│   │       ├── attestation.rs   # Core signing logic, ephemeral keys
-│   │       ├── auth/            # Authorization primitives (V1.1+)
-│   │       │   └── mod.rs       # Capability-based, not identity-based
-│   │       ├── button.rs        # GPIO event detection
-│   │       ├── cooldown.rs      # Physical rate limiting
-│   │       └── entropy.rs       # Hardware RNG wrapper
-│   └── nostd/           # Bare-metal esp-hal: the migration target
+├── firmware/
+│   └── nostd/           # Bare-metal esp-hal. Owns its target, toolchain and
+│       ├── .cargo/      #   lockfile; excluded from the workspace above
 │       └── src/
 │           ├── bin/main.rs  # Entropy gate, then the button event loop
 │           ├── button.rs    # GPIO binding; active-low is the only fact here
@@ -208,8 +203,10 @@ See [THREAT_MODEL.md](THREAT_MODEL.md) for detailed analysis.
 **Conditional, not yet guaranteed:**
 - *True hardware entropy.* The RNG is only a true RNG while the RF subsystem or
   an ADC entropy source is live. With radios off, that means the SAR-ADC path,
-  which is brought up explicitly in `firmware/nostd/` but **not** in
-  `firmware/esp-idf/`. Unvalidated on hardware either way.
+  which the firmware brings up explicitly and gates key generation behind — so a
+  key cannot be drawn before it exists. That the source is *enabled* is
+  structural; that its output is statistically good is unvalidated, and needs
+  silicon.
 
 **Non-goals:**
 - Device identity or authentication

@@ -5,6 +5,10 @@
 //! [`cooldown`]. They share one rule — **no hardware, and no clock of their
 //! own**. Every reading a decision depends on arrives as a parameter.
 //!
+//! [`auth`] is the exception: no code at all, only the constraint that keeps
+//! device identity out of this project. Read it before adding anything that
+//! could link two attestations to one device.
+//!
 //! Everything here is deterministic. Ed25519 signing is deterministic by
 //! construction, and postcard encoding is deterministic by requirement, so the
 //! only non-deterministic inputs an attestation has are the entropy seed and the
@@ -31,6 +35,7 @@
 
 #![no_std]
 
+pub mod auth;
 pub mod button;
 pub mod cooldown;
 
