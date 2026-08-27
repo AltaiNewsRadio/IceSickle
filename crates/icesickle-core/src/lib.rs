@@ -38,6 +38,7 @@
 pub mod auth;
 pub mod button;
 pub mod cooldown;
+pub mod emission;
 
 use ed25519_dalek::{Signer, SigningKey};
 use serde::{Deserialize, Serialize};
