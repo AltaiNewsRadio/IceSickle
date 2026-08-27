@@ -367,6 +367,103 @@ Until one is chosen, **D12's role split stands and its wire encoding does not
 exist.** Anything implementing the content layer is blocked; anything
 implementing the genuineness layer is not.
 
+## D13 — The device has a clock; the clock is not trusted for verification
+
+Resolves the contradiction flagged when the cooldown work turned up a DS3231 that
+appears in the narrative documents and nowhere in this repository.
+
+Two claims were being conflated:
+
+1. **The device has a clock** — a hardware fact.
+2. **The device's clock is trusted** — a security claim.
+
+The narrative assumed (1). Every merged decision assumed the negation of (2).
+Those are not in conflict — a device may hold a clock whose readings a verifier
+declines to take on faith — but no document said which sense was meant. **That
+silence was the bug.** A later reader could resolve it in whichever direction was
+convenient, and "there is a clock, so trust the timestamp" quietly opens the
+seizure backdating hole.
+
+### Decision
+
+**The device has a battery-backed clock (DS3231 + CR1220). It stays.** It serves
+local functions: proposing an attestation timestamp, the cooldown, a heartbeat,
+and a dead-man timer.
+
+**Its readings are not trusted for verification.** A seized device can be set to
+any time — pull the cell, write a fake value — so a device-asserted timestamp is
+**an input to be anchored, never an authority to be believed**. The beacon
+(`VERIFIER_MODEL.md` §3.2) and the ingest co-signature (§3.3) stand unchanged,
+and D10's asymmetry — verifiers get a clock, the device does not get a *trusted*
+one — is preserved and now stated in the sense that was always meant.
+
+### Why: the bound only closes from both sides
+
+A trusted clock on the *recipient* proves one direction and only one:
+
+- **Upper bound, free from arrival.** The recipient stamps arrival with its own
+  trusted clock. An attestation cannot have been created after it arrived, so one
+  claiming a time *later* than its arrival stamp is provably malformed. **Reject.**
+  Cheap, sound, adopted.
+- **Lower bound, not provided by arrival.** The recipient cannot show the event
+  happened no *earlier* than claimed. A seized device backdates — stamp last
+  Tuesday, arrive today — and because the design deliberately allows unbounded
+  latency, a legitimately delayed attestation and a maliciously backdated one are
+  byte-identical. Arrival time cannot separate them.
+
+The beacon closes exactly the half arrival cannot. Folding in a value the device
+could not have known before the beacon was published at `t_lo` means the
+attestation could not have been constructed earlier than `t_lo`. Together the two
+pin the event inside a window anchored entirely by clocks the adversary does not
+control, and the device's own clock is trusted at no point in the chain.
+
+The device clock is a wristwatch: you need it to function. The beacon and the
+arrival stamp are the notary's date stamp, and they are what carries weight,
+because the wearer can set the watch to anything.
+
+### Two consequences that follow, and are not optional
+
+**`timestamp_ms` has to become wall-clock time.** §5 currently defines it as
+milliseconds since boot, and `VERIFIER_MODEL.md` §1 says so too. The
+reject-if-later-than-arrival rule compares the device's claim against the
+recipient's wall clock, and *a since-boot counter is not comparable to a wall
+clock at all* — the check is unimplementable until the field changes meaning.
+This costs no bytes: the field is already a `u64` and §5 already budgets its
+10-byte varint worst case, which Unix milliseconds sit well inside.
+
+**The clock must not become somewhere to keep an identifier.** A persistent,
+battery-backed component is exactly the kind of place a device identity
+accumulates by accident — a serial written to spare NVRAM, a first-boot timestamp
+that never changes and distinguishes one unit from every other. That is what
+`crates/icesickle-core/src/auth.rs` forbids, and the rule holds no matter how
+convenient the storage is. The clock stores time. Nothing else.
+
+### Consequences that are simply unlocked
+
+- The DS3231 is confirmed as intended hardware rather than narrative-only, which
+  resolves that instance of the drift this document's header has flagged from the
+  start. **No I2C driver exists in `firmware/nostd` yet**; that is now real work.
+- **Cooldown persistence** may use the clock. `docs/ROADMAP.md` recommended
+  RTC-backed memory only because the external clock was unavailable; that
+  blocker is lifted, and a clock surviving a battery pull is the stronger store.
+  Cooldown is a local function, not a claim verified against an adversary, so
+  using an untrusted clock for it is consistent.
+- A **dead-man timer**, if built, may rely on it as a local function on the same
+  reasoning.
+- The verifier gains the **arrival-time reject rule** (§6 step 8).
+- The beacon and co-signature are **reaffirmed, not made redundant**. They are
+  the other half of the arrival check, not a duplicate of it.
+
+### Sub-question for the gate
+
+Added to [issue #16](https://github.com/Mezo-oz/IceSickle/issues/16): confirm the
+beacon actually delivers the lower bound this decision leans on — that folding in
+a value published at `t_lo` genuinely proves the attestation could not have been
+constructed earlier, with no way for a seized device to precompute, replay or
+otherwise manufacture a valid-looking earlier one. "It could not have been made
+before `t_lo`" is a security claim, and it is not one we may mark solved
+ourselves.
+
 ---
 
 ## Still open
@@ -379,8 +476,7 @@ unforgeability, unlinkability, and replay arguments. Public-key distribution
 authenticity was on that list and is now D10; §10 of that document carries the
 certificate format and the verifier's added check.
 
-What remains open is tracked in `docs/ROADMAP.md`. **The next thing to decide is
-whether the payload is sealed or in the clear** — D1 and D2 say the device seals
-to the operator's backend key, `TOKEN_PROTOCOL.md` §5 and §6 read it in the
-clear, and D3 is why those cannot both stand. It surfaced while working out
-D11's anonymity set, which it also changes.
+What remains open is tracked in `docs/ROADMAP.md`, and the hard gate on all of it
+is [issue #16](https://github.com/Mezo-oz/IceSickle/issues/16): §7's security
+argument is an unreviewed non-specialist sketch, and D10, D11, D12 and D13's
+lower-bound claim all rest on it.
