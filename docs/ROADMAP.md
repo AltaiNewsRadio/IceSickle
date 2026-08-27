@@ -123,8 +123,10 @@ under the seizure and duress threat model where an adversary may simply cycle
 power. Store the last-attestation time and compute the cooldown against real
 wall-clock time on wake.
 
-**Before choosing option 2, read the next section.** It is not currently
-available, and adding it is a larger decision than this one.
+**D13 resolved this.** The clock is confirmed intended hardware, so option 2 is
+available — and since it survives a battery pull it is the stronger store. The
+recommendation below is superseded on that point; what stands is that the fix is
+still *two* changes, and that the clock stores time and nothing else.
 
 ### The recommendation
 

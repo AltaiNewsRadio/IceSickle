@@ -84,8 +84,16 @@ pub enum AttestationEvent {
 pub struct AttestationPayload {
     pub version: u8,
     pub event: AttestationEvent,
-    /// Milliseconds since device boot. Meaningless to a third party without the
-    /// time-bounding described in `docs/VERIFIER_MODEL.md`.
+    /// Milliseconds since device boot.
+    ///
+    /// **v2 changes this to Unix milliseconds** (D13): the device has a
+    /// battery-backed clock, and the arrival check in `TOKEN_PROTOCOL.md` §6
+    /// step 8 needs a value comparable to a verifier's wall clock.
+    ///
+    /// Comparable is not the same as trusted. A seized device can be set to any
+    /// time, so this is an input to be anchored, never an authority — the
+    /// bounding in `docs/VERIFIER_MODEL.md` §3.2 and §3.3 is what carries the
+    /// weight.
     pub timestamp_ms: u64,
     /// Monotonic counter. Resets on power cycle.
     pub counter: u32,

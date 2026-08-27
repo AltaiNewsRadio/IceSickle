@@ -151,7 +151,7 @@ Payload contents, at postcard's varint worst case:
 | `version` | 1 | `2` |
 | `key_id` | 2 | selects the epoch issuer key `X` (D6) |
 | `event` | 2 | tag + `gpio` |
-| `timestamp_ms` | 10 | u64 varint; still milliseconds since boot |
+| `timestamp_ms` | 10 | u64 varint; **Unix milliseconds** since D13, not since boot |
 | `counter` | 5 | u32 varint |
 | `beacon` | 16 | truncated `H(beacon)`, freshness lower bound |
 | `beacon_round` | 5 | u32 varint |
@@ -190,7 +190,16 @@ no issuer callback (D3).
    value, compare against `P.beacon`. A match means the attestation was created
    no earlier than that round's publication time `t_lo`.
 7. **Dedup.** Hand `T` to the Sink as the spend identifier (§8).
-8. **Freshness upper bound.** The Sink counter-signs with its ingest time `t_hi`.
+8. **Freshness upper bound, and the arrival check.** The Sink counter-signs
+   with its ingest time `t_hi`, taken from its own trusted clock. It then
+   compares the device's claim: **`P.timestamp_ms > t_hi` rejects**, because an
+   attestation cannot have been created after it arrived (D13).
+
+   That check is free and sound, and it closes only the upper half. It cannot
+   catch backdating — a seized device stamping last Tuesday and arriving today is
+   byte-identical to a legitimately delayed one, which the design explicitly
+   allows. Step 6's beacon is what closes the lower half, which is why the two
+   are not redundant.
 
 Steps 4 and 5 are the pair. Either alone proves nothing useful: step 4 without
 step 5 accepts anyone who copied a token off the wire; step 5 without step 4 is
