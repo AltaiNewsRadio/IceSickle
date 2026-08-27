@@ -30,11 +30,13 @@
 //!   holds its state in an owned value, so a device woken repeatedly would
 //!   attest every time with no rate limit at all.
 //!
-//! The second is a real interaction between low power and D-level rate limiting,
-//! and it is out of scope for a measurement scaffold. Fixing it needs either
-//! `#[esp_hal::ram(persistent)]` state or an RTC-backed clock that survives the
-//! reset, and that is an application decision rather than a bench one. Noted
-//! here because this file is where someone will first meet it.
+//! The second is a real interaction between low power and rate limiting, and it
+//! is out of scope for a measurement scaffold. **Tracked in `docs/ROADMAP.md`,
+//! "Cooldown must survive deep sleep"**, which also records the trap: persisting
+//! the stored timestamp is not enough on its own, because `Instant::now()`
+//! restarts at zero after deep sleep. The time base has to move to something
+//! that survives the reset — `Rtc::time_since_power_up()` — or the fix compares
+//! a saved value against a counter that just reset and changes nothing.
 
 #![no_std]
 #![no_main]

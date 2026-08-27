@@ -69,6 +69,104 @@ is not, this is arguably a setting the prototype carried without needing it.
 
 ---
 
+## Cooldown must survive deep sleep
+
+**Application-layer. Not gate-blocked** — this touches neither §7, the token
+protocol, nor D12, so it can be scheduled whenever. The decision is ours, not the
+reviewer's.
+
+### The finding
+
+Deep sleep on the ESP32-S3 is effectively a reset: RAM goes, including
+`icesickle_core::cooldown`'s state. A device woken repeatedly — sleep, wake,
+attest, sleep — starts each cycle with an empty cooldown, so the rate limit
+evaporates every cycle. **A rate limit that resets on every wake is not a rate
+limit**, and the failure is silent: nothing logs, nothing fails, the device just
+stops limiting.
+
+It is a direct consequence of the power design. The same deep sleep that gets us
+toward the standby target is what erases the state, so the two requirements pull
+against each other and something has to persist across the reset.
+
+Surfaced by the Brief 3 scaffolding and recorded in
+`firmware/nostd/src/bin/sleep_bench.rs`, which is where whoever moves the real
+firmware to deep sleep will meet it first.
+
+### Persisting the value is not enough — the clock has to survive too
+
+This is the part most likely to produce a fix that looks right and does nothing.
+
+The cooldown compares a stored timestamp against `now_ms`. Today that comes from
+`Instant::now()`, which is the system timer and **restarts at zero after deep
+sleep**. Persist the last-attestation timestamp without changing the time base
+and every wake compares a large saved value against a counter that just reset —
+`checked_sub` returns `None`, the cooldown fails open by design
+(`cooldown.rs`), and the rate limit is exactly as absent as before, now behind
+code that appears to address it.
+
+So any fix is two changes, not one: **persist the state, and move the time base
+to a clock that survives the reset.**
+
+### Two stores
+
+**1. RTC-backed memory.** The ESP32-S3 keeps an RTC domain powered through deep
+sleep. esp-hal exposes `#[ram(unstable(persistent))]` for variables that survive
+it, and `Rtc::time_since_power_up()` for a counter measured from power-up rather
+than from boot — which is the matching time base. Cheapest option, and both
+halves are already available.
+
+Its limit is exactly its name: it survives deep sleep, not a power loss or a
+battery pull.
+
+**2. A battery-backed external RTC.** Survives full power loss, which matters
+under the seizure and duress threat model where an adversary may simply cycle
+power. Store the last-attestation time and compute the cooldown against real
+wall-clock time on wake.
+
+**Before choosing option 2, read the next section.** It is not currently
+available, and adding it is a larger decision than this one.
+
+### The recommendation
+
+Option 1, unless the cooldown must survive a battery pull.
+
+The argument for option 2 is real — an adversary who can pull the battery can
+reset the rate limit — but so can an adversary who can reflash, which the threat
+model already concedes. Both require the same physical access. Option 1 closes
+the accidental case (a device that sleeps normally) without adding a component,
+and the deliberate case was never closed by either option.
+
+### An external RTC is not in this repo, and would change more than the cooldown
+
+Flagged because it was proposed as already present: **there is no DS3231, no I2C,
+no coin cell, and no external clock anywhere in this repository** — no
+dependency, no driver, no mention in any document. If one is planned, it lives in
+the `.docx` narrative documents this file's siblings still need reconciling with.
+
+That matters well beyond this item, because the device having no trusted clock is
+a load-bearing premise in decisions that are already merged:
+
+- `VERIFIER_MODEL.md` §1 states plainly that `timestamp_ms` is milliseconds since
+  boot, meaningless across a power cycle and meaningless to a third party because
+  nothing anchors what "boot" was.
+- §3.2's preloaded beacon and §3.3's ingest co-signature exist **specifically
+  because** the device cannot be trusted to say what time it is. A real clock
+  would not make them redundant — the device could still lie — but it would
+  change the argument for why they are shaped as they are.
+- D10 leans on the same asymmetry when it gives verifiers a clock for certificate
+  expiry and denies the device one.
+
+So if a battery-backed RTC is genuinely in the hardware plan, **it should be
+recorded as a decision in its own right and those sections revisited** — not
+adopted sideways as an implementation detail of a rate limit.
+
+### Already handled
+
+A trigger held at boot would wake the device continuously, turning standby into
+an always-on duty cycle and destroying the power budget. The Brief 3 scaffold
+reads the pin before consuming it as a wake source and warns. No further action
+unless bench testing shows the warning is insufficient.
+
 ## Already documented elsewhere
 
 Pointers, not summaries. Each of these is developed where it is linked.
