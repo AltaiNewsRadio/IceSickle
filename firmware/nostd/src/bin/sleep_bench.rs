@@ -70,7 +70,9 @@ fn main() -> ! {
     println!("wake source: GPIO{BUTTON_PIN}, active low");
 
     let config = esp_hal::Config::default().with_cpu_clock(CpuClock::max());
-    let peripherals = esp_hal::init(config);
+    // `mut` because the held-trigger check below reborrows GPIO0 rather than
+    // consuming it -- the pin has to survive to become the wake source.
+    let mut peripherals = esp_hal::init(config);
 
     // Read the pin once, before it is consumed as a wake source. A device whose
     // button is held at boot would otherwise wake immediately and forever, and
