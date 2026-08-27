@@ -8,6 +8,13 @@ version      = "0.1.0"
 name = "icesickle-nostd"
 path = "./src/bin/main.rs"
 
+# Bench scaffolding, not firmware: deep-sleep with GPIO wake and nothing else,
+# so a meter inline with the battery rail reads true standby. Listed explicitly
+# because the [[bin]] above disables cargo's auto-discovery of src/bin.
+[[bin]]
+name = "sleep-bench"
+path = "./src/bin/sleep_bench.rs"
+
 # Versions below are whatever `esp-generate 1.3.0 --chip esp32s3 -o unstable-hal
 # -o esp-backtrace -o log` produced, reconciled rather than hand-picked. The
 # `unstable` feature on esp-hal is required: `Trng`/`TrngSource` are gated
