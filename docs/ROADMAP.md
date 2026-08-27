@@ -95,8 +95,10 @@ Pointers, not summaries. Each of these is developed where it is linked.
   moment.
 - **Cryptographic review — a hard gate, not a task.** §7 is a sketch by a
   non-specialist and says so, and D10, D11 and D12 now all rest on it. Tracked as
-  an issue; **no security-relevant decision after D12 may be built until it
-  closes**, and it does not close by non-specialist agreement.
+  [issue #16](https://github.com/Mezo-oz/IceSickle/issues/16), which also carries
+  the D12 binding-composition and `T`-key-reuse questions. **No security-relevant
+  decision after D12 may be built until it closes**, and it does not close by
+  non-specialist agreement.
 
 **Hardware validation** — `docs/NOSTD_ENTROPY_SPIKE.md`, Status. Every item
 needs silicon; no emulator can substitute, because QEMU's RNG returns host

@@ -295,8 +295,10 @@ native period are not the same thing.
 
 ## D12 — Verifier reads the outer layer; Sink opens the seal
 
-**Provisional. Pending specialist review — see the security gate issue.** This is
-recorded so it stops blocking, not because it is confirmed.
+**Provisional. Pending specialist review —
+[issue #16](https://github.com/Mezo-oz/IceSickle/issues/16).** Recorded so it
+stops blocking, not because it is confirmed. No security-relevant decision after
+this one may be built on it until that gate closes.
 
 Resolves the D1/D2 ↔ `TOKEN_PROTOCOL.md` ↔ D3 contradiction D11 surfaced. The
 attestation is two layers:
