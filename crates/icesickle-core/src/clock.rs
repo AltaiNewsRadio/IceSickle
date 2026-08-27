@@ -99,6 +99,43 @@ pub const MIN_YEAR: u16 = 2000;
 /// Latest representable year.
 pub const MAX_YEAR: u16 = 2199;
 
+/// Highest register the DS3231 implements.
+pub const MAX_REGISTER: u8 = 0x12;
+
+/// The registers this project touches: the seven timekeeping bytes and the
+/// status byte.
+pub const PERMITTED_REGISTERS: [u8; 8] = [0x00, 0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x0F];
+
+/// Battery-backed, writable, and useless to this design — which is exactly what
+/// makes them dangerous.
+///
+/// The two alarm blocks (`0x07`–`0x0D`) and the aging offset (`0x10`) are eight
+/// bytes that survive a power cycle, that nothing here reads, and that would
+/// hold a serial number perfectly well. D13 says the clock stores time and
+/// nothing else; this is the list of places that rule is actually about, and
+/// [`RegisterWrite`] is what stops the rule being merely written down.
+pub const SCRATCHPAD_REGISTERS: [u8; 8] = [0x07, 0x08, 0x09, 0x0A, 0x0B, 0x0C, 0x0D, 0x10];
+
+/// Real registers this design has no use for, and which are not storage:
+/// control (`0x0E`) and the two temperature bytes (`0x11`–`0x12`, read-only).
+///
+/// Kept as a named set rather than left implicit so that
+/// `every_register_is_classified` can prove the three lists account for the
+/// whole map. Adding a register to none of them is then a test failure rather
+/// than an oversight.
+///
+/// Control is deliberately not in [`SCRATCHPAD_REGISTERS`]. Every bit in it
+/// changes observable behaviour — oscillator enable, square-wave output, alarm
+/// interrupts — so it is configuration rather than a hiding place, and a
+/// provisioning step may one day have a real reason to write it. If something
+/// starts writing it for a reason that is *not* one of those bits, that is the
+/// moment to look hard.
+pub const UNUSED_REGISTERS: [u8; 3] = [0x0E, 0x11, 0x12];
+
+/// Longest transaction this module builds: a register pointer plus the seven
+/// timekeeping bytes.
+const MAX_WRITE_LEN: usize = 1 + TIME_REGISTER_COUNT;
+
 /// Bit 6 of the hours register: 12-hour mode.
 const HOURS_12_HOUR_MODE: u8 = 0x40;
 
@@ -292,6 +329,101 @@ pub const fn oscillator_stopped(status: u8) -> bool {
 /// decoration, since the low bits carry the 32 kHz enable and the alarm flags.
 pub const fn clear_oscillator_stop_flag(status: u8) -> u8 {
     status & !OSCILLATOR_STOP_FLAG
+}
+
+/// Whether a register is one of the battery-backed bytes D13's rule is about.
+///
+/// Exists so a driver can gate on it, and so the ban has a name that appears in
+/// a stack trace rather than only in prose.
+pub const fn is_scratchpad_register(register: u8) -> bool {
+    let mut i = 0;
+    while i < SCRATCHPAD_REGISTERS.len() {
+        if SCRATCHPAD_REGISTERS[i] == register {
+            return true;
+        }
+        i += 1;
+    }
+    false
+}
+
+/// An I2C write this crate sanctions: a register pointer followed by its bytes.
+///
+/// # Why this is a type and not a pair of arguments
+///
+/// D13 requires that the clock hold time and nothing else, and the module docs
+/// explain why the part does not enforce that for us — the alarm registers are
+/// seven bytes of persistent scratch space wearing a different name.
+///
+/// A rule in a doc comment is a rule until someone in a hurry needs eight bytes
+/// of storage and notices the clock has some going spare. So the rule is a type
+/// instead. The fields are private and there is no public constructor: the only
+/// `RegisterWrite` values that can exist are the ones the associated functions
+/// below build, and neither of them can target [`SCRATCHPAD_REGISTERS`]. A write
+/// to an alarm register is not forbidden here, it is **unrepresentable**.
+///
+/// # What this does not do
+///
+/// It does not make raw I2C impossible. Firmware that wants to can still hand a
+/// bus driver its own byte slice, and no type in this crate can reach across and
+/// stop it. What the type buys is that the sanctioned path is obvious, is the
+/// path of least resistance, and that stepping off it has to be done on purpose
+/// and looks like it — which, absent a mechanism the silicon does not offer, is
+/// the realistic ceiling.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct RegisterWrite {
+    /// Register pointer first, then payload. Fixed-size, so no allocator.
+    buffer: [u8; MAX_WRITE_LEN],
+    len: u8,
+}
+
+impl RegisterWrite {
+    /// Set the clock. Targets [`REG_SECONDS`] and writes all seven timekeeping
+    /// registers in one transaction, which is how the datasheet says to avoid
+    /// tearing across a seconds rollover.
+    pub fn set_time(time: &CivilTime) -> Self {
+        let regs = time.to_registers();
+        let mut buffer = [0u8; MAX_WRITE_LEN];
+        buffer[0] = REG_SECONDS;
+        let mut i = 0;
+        while i < TIME_REGISTER_COUNT {
+            buffer[1 + i] = regs[i];
+            i += 1;
+        }
+        Self {
+            buffer,
+            len: MAX_WRITE_LEN as u8,
+        }
+    }
+
+    /// Acknowledge a stop, preserving every other status bit.
+    ///
+    /// **Order matters and the API cannot enforce it.** Issue
+    /// [`RegisterWrite::set_time`] first: the stop flag is the only durable
+    /// record that the registers are stale, so clearing it before a real time is
+    /// written converts a detectable fault into a confidently wrong date. See
+    /// [`clear_oscillator_stop_flag`].
+    pub fn acknowledge_oscillator_stop(status: u8) -> Self {
+        let mut buffer = [0u8; MAX_WRITE_LEN];
+        buffer[0] = REG_STATUS;
+        buffer[1] = clear_oscillator_stop_flag(status);
+        Self { buffer, len: 2 }
+    }
+
+    /// The register this write targets.
+    pub const fn register(&self) -> u8 {
+        self.buffer[0]
+    }
+
+    /// The whole transaction: register pointer followed by payload. Hand this
+    /// straight to an I2C `write` at [`I2C_ADDRESS`].
+    pub fn bytes(&self) -> &[u8] {
+        &self.buffer[..self.len as usize]
+    }
+
+    /// Just the payload, without the leading register pointer.
+    pub fn payload(&self) -> &[u8] {
+        &self.buffer[1..self.len as usize]
+    }
 }
 
 /// Decode registers `0x00`–`0x06`.
@@ -700,5 +832,133 @@ mod tests {
     fn every_timestamp_is_a_whole_number_of_seconds() {
         assert_eq!(decode_time(&KNOWN_REGS).unwrap().unix_ms() % 1000, 0);
         assert_eq!(civil(2199, 12, 31).unix_ms() % 1000, 0);
+    }
+
+    // -----------------------------------------------------------------------
+    // D13's scratchpad ban, enforced rather than documented
+    // -----------------------------------------------------------------------
+
+    /// Every register on the part is classified exactly once.
+    ///
+    /// This is the test that gives the ban its teeth. `SCRATCHPAD_REGISTERS` on
+    /// its own is a list someone can quietly fail to extend; a partition cannot
+    /// be quietly failed to extend, because an address in none of the three sets
+    /// fails here and an address in two of them fails here as well.
+    ///
+    /// So the only way to start using a battery-backed register is to move it
+    /// out of the scratchpad set explicitly, in a diff, with this test's name in
+    /// the blame — which is the whole difference between a rule and a comment.
+    #[test]
+    fn every_register_is_classified() {
+        let mut classifications = [0u8; MAX_REGISTER as usize + 1];
+        for register in PERMITTED_REGISTERS {
+            classifications[register as usize] += 1;
+        }
+        for register in SCRATCHPAD_REGISTERS {
+            classifications[register as usize] += 1;
+        }
+        for register in UNUSED_REGISTERS {
+            classifications[register as usize] += 1;
+        }
+
+        for (register, count) in classifications.iter().enumerate() {
+            assert_eq!(
+                *count, 1,
+                "register {register:#04x} is classified {count} times, not exactly once",
+            );
+        }
+
+        // ...and no set names a register the part does not have.
+        assert_eq!(
+            PERMITTED_REGISTERS.len() + SCRATCHPAD_REGISTERS.len() + UNUSED_REGISTERS.len(),
+            MAX_REGISTER as usize + 1,
+            "the three sets do not cover the register map exactly",
+        );
+    }
+
+    /// Nothing this module can build writes to a battery-backed register.
+    ///
+    /// Exhaustive over both constructors: every hour of a day for the time
+    /// write, every one of the 256 status bytes for the acknowledgement. There
+    /// are only two producers of a `RegisterWrite`, so this covers the entire
+    /// space of writes the type permits to exist.
+    #[test]
+    fn nothing_this_module_can_write_touches_the_scratchpad() {
+        for hour in 0..24u8 {
+            for day in [1u8, 28, 31] {
+                let time = CivilTime::new(2026, 12, day.min(31), hour, 59, 59).unwrap();
+                let write = RegisterWrite::set_time(&time);
+                assert!(
+                    !is_scratchpad_register(write.register()),
+                    "set_time targeted {:#04x}",
+                    write.register(),
+                );
+                assert_eq!(write.register(), REG_SECONDS);
+            }
+        }
+
+        for status in 0..=u8::MAX {
+            let write = RegisterWrite::acknowledge_oscillator_stop(status);
+            assert!(
+                !is_scratchpad_register(write.register()),
+                "acknowledge_oscillator_stop targeted {:#04x}",
+                write.register(),
+            );
+            assert_eq!(write.register(), REG_STATUS);
+        }
+    }
+
+    /// The ban is not vacuous.
+    ///
+    /// Without this, `nothing_this_module_can_write_touches_the_scratchpad`
+    /// would pass just as happily against a predicate that returns `false` for
+    /// everything, and the invariant above would be decoration. The same reason
+    /// `emission.rs` keeps `the_identifier_scan_catches_key_reuse`.
+    #[test]
+    fn the_scratchpad_ban_actually_fires() {
+        // Both alarm blocks and the aging offset: the eight bytes a serial
+        // number would fit in.
+        for register in [0x07u8, 0x08, 0x09, 0x0A, 0x0B, 0x0C, 0x0D, 0x10] {
+            assert!(
+                is_scratchpad_register(register),
+                "{register:#04x} is battery-backed writable storage and must be banned",
+            );
+        }
+
+        // Everything this design does touch must not be caught by it, or the
+        // ban would block the module's own work.
+        for register in PERMITTED_REGISTERS {
+            assert!(!is_scratchpad_register(register), "{register:#04x}");
+        }
+
+        // Control is configuration, not storage. Called out because it is the
+        // one address whose classification is a judgement rather than a fact.
+        assert!(!is_scratchpad_register(0x0E));
+    }
+
+    #[test]
+    fn a_time_write_is_the_register_pointer_then_the_encoded_registers() {
+        let time = CivilTime::new(2026, 8, 27, 14, 5, 9).unwrap();
+        let write = RegisterWrite::set_time(&time);
+
+        assert_eq!(write.bytes()[0], REG_SECONDS, "register pointer leads");
+        assert_eq!(write.payload(), &KNOWN_REGS, "payload is the encoding");
+        assert_eq!(write.bytes().len(), 1 + TIME_REGISTER_COUNT);
+
+        // The round trip closes: what this write would put in the part is what
+        // decode_time reads back out of it.
+        let mut regs = [0u8; TIME_REGISTER_COUNT];
+        regs.copy_from_slice(write.payload());
+        assert_eq!(decode_time(&regs), Ok(time));
+    }
+
+    #[test]
+    fn acknowledging_a_stop_clears_that_bit_and_no_other() {
+        for status in 0..=u8::MAX {
+            let write = RegisterWrite::acknowledge_oscillator_stop(status);
+            assert_eq!(write.bytes()[0], REG_STATUS);
+            assert_eq!(write.payload(), &[status & 0x7F], "status {status:#04x}");
+            assert!(!oscillator_stopped(write.payload()[0]));
+        }
     }
 }
