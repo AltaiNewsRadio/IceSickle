@@ -82,19 +82,21 @@ Pointers, not summaries. Each of these is developed where it is linked.
 - ~~Epoch length.~~ **Settled** as D11: a 7-day beacon round and a 28-day key
   epoch, split apart because `beacon_round` and `key_id` were always separate
   payload fields answering different questions.
-- **Is the payload sealed, or in the clear? — now the most blocking item here.**
-  D1 and D2 say the device seals payloads to the operator's backend key;
-  `TOKEN_PROTOCOL.md` §5 and §6 read the payload in the clear. D3 is why they
-  conflict. It has to resolve before a Verifier and a Sink are built as separate
-  parties, and it changes who can read the fields D11's anonymity analysis rests
-  on.
+- ~~Is the payload sealed, or in the clear?~~ **Answered** by D12: a cleartext
+  genuineness layer the Verifier checks, a sealed content layer only the Sink
+  opens. D12 is **provisional pending the security gate**.
+- **The sealed content layer does not fit the frame.** Arithmetic, not judgement:
+  24 bytes of `P` must stay cleartext for §6, leaving 40 against a sealed box's
+  48 bytes of overhead. D12 lists four routes and picks none. Blocks the content
+  layer; the genuineness layer is unaffected.
 - Beacon source — external (drand) versus verifier-signed.
 - Entropy re-scoping — v2 moves key generation from press time to provisioning
   time, so `docs/NOSTD_ENTROPY_SPIKE.md` guards the right secret at the wrong
   moment.
-- Cryptographic review. §7 is a sketch by a non-specialist and says so.
-  **Implementing the protocol before this happens means building on unreviewed
-  crypto.**
+- **Cryptographic review — a hard gate, not a task.** §7 is a sketch by a
+  non-specialist and says so, and D10, D11 and D12 now all rest on it. Tracked as
+  an issue; **no security-relevant decision after D12 may be built until it
+  closes**, and it does not close by non-specialist agreement.
 
 **Hardware validation** — `docs/NOSTD_ENTROPY_SPIKE.md`, Status. Every item
 needs silicon; no emulator can substitute, because QEMU's RNG returns host

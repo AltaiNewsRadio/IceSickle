@@ -379,17 +379,16 @@ timestamp trustworthy, and the two are easy to conflate when reading step 2 as a
 
 ## 11. Open items
 
-- **Is the payload sealed, or in the clear?** Found while working out D11's
-  anonymity set, and it is not a wording problem. D1 and D2 both say the device
-  **seals payloads to the operator's backend key**. This document does not: §5
-  puts `P` in the frame unencrypted and §6 step 2 decodes it directly, with no
-  decryption anywhere. The two cannot both be right, and D3 is the reason —
-  distributed verifiers hold public material only, so a sealed `P` would need the
-  backend *private* key at every field node, which is exactly the forgery-power
-  distribution D4 refused. Whichever way it resolves changes who can read
-  `key_id`, `beacon_round` and `region`, and therefore changes D11's analysis
-  from "any observer" to "the operator". **Needs deciding before a Verifier and a
-  Sink are built as separate parties.**
+- **How the sealed content layer fits in 64 bytes.** D12 answered *whether* the
+  payload is sealed — partly: the Verifier reads a cleartext genuineness layer,
+  the Sink opens a sealed content layer. The binding that split needs already
+  exists, since `sig_P` covers all 64 bytes of `P` (§5, §6 step 5). What does not
+  work is the size. `version`, `key_id`, `beacon` and `beacon_round` cannot be
+  sealed because §6 steps 2 and 6 read them, leaving 40 bytes against an X25519
+  sealed box's 48 bytes of overhead — short before any content. D12 lists four
+  routes; the only comfortable one derives the sealed box's ephemeral key from
+  `T`, which is a key-reuse composition for the gate review to rule on.
+  **Blocking for the content layer only.** The genuineness layer is unaffected.
 - **Beacon source.** Still open, though D11 narrows it: both candidates work at a
   7-day sampling period, since the sampling period and the beacon's native period
   are different things. An external beacon (drand) is independently verifiable

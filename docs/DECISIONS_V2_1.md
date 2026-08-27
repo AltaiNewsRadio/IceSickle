@@ -293,6 +293,78 @@ and the device simply samples one round per period, and an operator-signed epoch
 token is issued on whatever period the operator picks. Sampling period and beacon
 native period are not the same thing.
 
+## D12 — Verifier reads the outer layer; Sink opens the seal
+
+**Provisional. Pending specialist review — see the security gate issue.** This is
+recorded so it stops blocking, not because it is confirmed.
+
+Resolves the D1/D2 ↔ `TOKEN_PROTOCOL.md` ↔ D3 contradiction D11 surfaced. The
+attestation is two layers:
+
+- **Genuineness layer, cleartext.** Blind token and payload signature. Publicly
+  verifiable with the issuer's public verify key. A Verifier checks this offline
+  in the field and decrypts nothing.
+- **Content layer, sealed.** Event, region, precision, timestamp, in a sealed box
+  to the operator's backend key. Only the **Sink** holds that private key.
+
+**Verifier and Sink become distinct roles**, which is the substance of this
+decision. A field node is a Verifier: it holds public material and unopenable
+blobs. That preserves D3 (offline public-key verification), keeps D1/D2's sealing
+claim true, and means a seized field node decrypts nothing.
+
+### The binding requirement is already met
+
+The concern is real: a valid token and signature must not be transplantable onto
+a swapped payload. The proposed remedy was to have the signature commit to a hash
+of the sealed box.
+
+**That is already what happens.** §5 makes `sig_P` an Ed25519 signature over all
+64 bytes of the padded payload region, and §6 step 5 verifies it over all 64. A
+sealed box placed inside `P` is covered byte-for-byte, so the commitment exists
+without adding a mechanism. The Verifier checks it without opening the seal,
+exactly as required.
+
+No new construction is needed here, and adding a redundant hash-commitment layer
+would be one more thing for a reviewer to check for no gain.
+
+### It does not fit the frame
+
+This is the blocking problem, and it is arithmetic rather than judgement.
+
+| | bytes |
+|---|---|
+| Frame (D5) | 224 |
+| `T` (32) + `sig_P` (64) + `sigma` (64) | −160 |
+| **available for `P`** | **64** |
+| cleartext the Verifier must read: `version` 1, `key_id` 2 (§6 step 2), `beacon` 16, `beacon_round` 5 (step 6) | −24 |
+| **left for the sealed box** | **40** |
+| X25519 sealed box overhead: ephemeral public key 32 + Poly1305 MAC 16 | **48** |
+
+**Short by 8 bytes carrying no plaintext at all.** The four fields above cannot
+be sealed — §6 needs them to select the epoch key and check freshness — so this
+is not recoverable by moving content around.
+
+Four routes, none of them free, none decided here:
+
+- **Truncate the beacon to 8 bytes.** Frees exactly 8, which reaches 48 available
+  against 48 of overhead — still nothing left for content. Insufficient alone.
+- **Derive the sealed box's ephemeral X25519 key from `T`.** `T` is already in the
+  frame, and Ed25519 keys map to X25519 birationally, so the 32-byte ephemeral
+  public key stops needing its own space: overhead falls to the 16-byte MAC and
+  the payload lands at 24 + 16 + 21 = 61 of 64. **This is the only route that
+  fits comfortably**, and it is a signing-key-reuse-for-key-agreement composition
+  with known sharp edges. It is a question for the gate, not a choice to make
+  here.
+- **Raise the padding tier.** D5 picked 224 precisely because 256 collides with
+  the RFM95W single-packet ceiling. This means two packets on the narrowest
+  transport.
+- **Seal only where there is room.** Tier-dependent behaviour, and it reintroduces
+  a length distinguisher of exactly the kind D5 and §8 work to remove.
+
+Until one is chosen, **D12's role split stands and its wire encoding does not
+exist.** Anything implementing the content layer is blocked; anything
+implementing the genuineness layer is not.
+
 ---
 
 ## Still open
