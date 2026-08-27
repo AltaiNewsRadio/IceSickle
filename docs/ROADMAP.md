@@ -197,13 +197,32 @@ on stable, no hardware, following the same seam as `button` and `cooldown`.
 3. **Cooldown persistence**, below, which needs a time base that survives the
    reset and now has one.
 
-**A rule the hardware does not enforce.** D13 says the clock stores time and
-nothing else. It is tempting to treat that as closed by the part choice, since
-the DS3231 has no general-purpose NVRAM the way a DS1307 does. It is not: the
-alarm registers are writable, battery-backed, unused, and seven bytes wide,
-which is a scratchpad under another name. The aging offset is another byte. So
-the rule stays a rule the code has to keep, and a **DS3234 must not be
-substituted** — the SPI sibling carries 256 bytes of battery-backed SRAM.
+**A rule the hardware does not enforce, so the code does.** D13 says the clock
+stores time and nothing else. It is tempting to treat that as closed by the part
+choice, since the DS3231 has no general-purpose NVRAM the way a DS1307 does. It
+is not: the alarm registers are writable, battery-backed, unused, and seven
+bytes wide, which is a scratchpad under another name. The aging offset is
+another byte.
+
+`clock.rs` therefore makes a write to those eight bytes **unrepresentable**
+rather than merely discouraged. `RegisterWrite` has private fields and no public
+constructor, so the only writes that can exist are the two the module builds,
+and `every_register_is_classified` requires all three register sets — permitted,
+scratchpad, unused — to partition `0x00..=0x12` exactly once each. Using a
+battery-backed register means moving it out of the scratchpad set in a diff,
+rather than simply not noticing the rule.
+
+Two limits worth keeping in view:
+
+- **This does not stop raw I2C.** Firmware can still hand a bus driver its own
+  byte slice, and no type in a host crate can prevent that. What the type buys
+  is that the sanctioned path is the path of least resistance and that leaving
+  it looks deliberate. **When the driver lands, its write path should take a
+  `RegisterWrite` rather than a `(register, bytes)` pair** — that is where this
+  constraint either holds or quietly stops mattering.
+- **Do not substitute a DS3234.** The SPI sibling of this part carries 256 bytes
+  of battery-backed SRAM, which would turn a rule that is currently easy to keep
+  into one that is easy to break.
 
 ---
 
