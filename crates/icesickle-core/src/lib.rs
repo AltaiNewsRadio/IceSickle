@@ -1,9 +1,16 @@
 //! Platform-independent IceSickle device logic.
 //!
-//! Three things live here: the attestation itself, at the crate root; the
-//! debounced button state machine in [`button`]; and the rate limit in
-//! [`cooldown`]. They share one rule — **no hardware, and no clock of their
-//! own**. Every reading a decision depends on arrives as a parameter.
+//! The attestation itself lives at the crate root; the debounced button state
+//! machine is in [`button`], the rate limit in [`cooldown`], the DS3231 register
+//! codec in [`clock`], and the models for emission and power in [`emission`] and
+//! [`power`]. They share one rule — **no hardware, and no clock of their own**.
+//! Every reading a decision depends on arrives as a parameter.
+//!
+//! [`clock`] is not the exception it looks like. It decodes the bytes of a
+//! real-time clock without ever reading one: the firmware does the I2C
+//! transaction and passes the registers in, the same way it passes `now_ms` to
+//! [`cooldown`]. Keeping the seam there is what makes a part nobody here owns
+//! testable on a host that does not have one.
 //!
 //! [`auth`] is the exception: no code at all, only the constraint that keeps
 //! device identity out of this project. Read it before adding anything that
@@ -37,6 +44,7 @@
 
 pub mod auth;
 pub mod button;
+pub mod clock;
 pub mod cooldown;
 pub mod emission;
 pub mod power;

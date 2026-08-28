@@ -169,6 +169,63 @@ an always-on duty cycle and destroying the power budget. The Brief 3 scaffold
 reads the pin before consuming it as a wake source and warns. No further action
 unless bench testing shows the warning is insufficient.
 
+## The DS3231 is half-built
+
+D13 confirmed the clock as intended hardware and left "no I2C driver exists" as
+real work. Half of it now does.
+
+**Done:** `crates/icesickle-core/src/clock.rs` — the register codec. Registers
+`0x00`–`0x06` and the status byte in, Unix milliseconds out, with the reads that
+must not be believed rejected rather than decoded: a raised oscillator-stop flag
+(the coin cell died and the registers are stale but well-formed), a floating bus
+reading `0xFF`, a chip left in 12-hour mode, and impossible dates including the
+2100-02-29 the DS3231's own leap-year rule will eventually produce. Host-tested
+on stable, no hardware, following the same seam as `button` and `cooldown`.
+
+**Not done, in order:**
+
+1. **The I2C transport.** esp-hal's `I2c` driver, two transactions — write the
+   register pointer, read seven bytes — plus the status read and the two writes
+   that set the clock. This is the part CI can only compile.
+2. **Wiring it into the firmware.** `firmware/nostd/src/bin/main.rs:62` still
+   defines `now_ms()` as `Instant::now()`, and line 156 still prints
+   `"ms since boot"`. Until that changes the firmware cannot produce the Unix
+   `timestamp_ms` that D13 made mandatory and that `TOKEN_PROTOCOL.md` §5,
+   `VERIFIER_MODEL.md` §1 and `AttestationPayload` already document — **the
+   docs and the code currently disagree on main, and the §6 step 8 arrival
+   check is unimplementable until they stop.**
+3. **Cooldown persistence**, below, which needs a time base that survives the
+   reset and now has one.
+
+**A rule the hardware does not enforce, so the code does.** D13 says the clock
+stores time and nothing else. It is tempting to treat that as closed by the part
+choice, since the DS3231 has no general-purpose NVRAM the way a DS1307 does. It
+is not: the alarm registers are writable, battery-backed, unused, and seven
+bytes wide, which is a scratchpad under another name. The aging offset is
+another byte.
+
+`clock.rs` therefore makes a write to those eight bytes **unrepresentable**
+rather than merely discouraged. `RegisterWrite` has private fields and no public
+constructor, so the only writes that can exist are the two the module builds,
+and `every_register_is_classified` requires all three register sets — permitted,
+scratchpad, unused — to partition `0x00..=0x12` exactly once each. Using a
+battery-backed register means moving it out of the scratchpad set in a diff,
+rather than simply not noticing the rule.
+
+Two limits worth keeping in view:
+
+- **This does not stop raw I2C.** Firmware can still hand a bus driver its own
+  byte slice, and no type in a host crate can prevent that. What the type buys
+  is that the sanctioned path is the path of least resistance and that leaving
+  it looks deliberate. **When the driver lands, its write path should take a
+  `RegisterWrite` rather than a `(register, bytes)` pair** — that is where this
+  constraint either holds or quietly stops mattering.
+- **Do not substitute a DS3234.** The SPI sibling of this part carries 256 bytes
+  of battery-backed SRAM, which would turn a rule that is currently easy to keep
+  into one that is easy to break.
+
+---
+
 ## Already documented elsewhere
 
 Pointers, not summaries. Each of these is developed where it is linked.
