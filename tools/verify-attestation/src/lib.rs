@@ -185,8 +185,8 @@ mod tests {
     /// and `signature:` — so the clock line here is decoration and no test
     /// depends on its shape. It is kept matching the firmware anyway: a fixture
     /// that has quietly stopped resembling the thing it imitates is worth less
-    /// with every release, and this one still says "ms since boot" three
-    /// decisions after that stopped being true.
+    /// with every release, and this one said "ms since boot" for three decisions
+    /// after that stopped being true.
     fn good_log() -> String {
         let sk = SigningKey::from_bytes(&[7u8; 32]);
         let mut payload = [0u8; ATTESTATION_PAYLOAD_LEN];
