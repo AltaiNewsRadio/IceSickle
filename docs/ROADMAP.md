@@ -240,9 +240,8 @@ wall-clock time against code printing `"ms since boot"` — is closed, and §6 s
   intent: causes pairwise distinct, every variant accounted for by a partition
   test, every remedy reachable, a dead cell and a dead bus never advising the
   same thing.
-- **SDA=GPIO8, SCL=GPIO9 — the conventional S3 pairing, and still an unconfirmed
-  board fact.** Marked as such in `main.rs` beside `BUTTON_PIN`. Confirming it
-  against a built unit is outstanding; correcting it is one visible line.
+- **SDA=GPIO8, SCL=GPIO9 — the conventional S3 pairing, and still a guess.** See
+  the gate below; this is the one thing in the wiring that is not settled.
 
 Two things found while doing it, both recorded where they bite: the clock cannot
 be the debounce time base (see the cooldown section above), and the clock is read
@@ -255,12 +254,43 @@ by construction — which is the argument for the refusal being loud and specifi
 rather than a halt. It costs nothing today: `esp_hal::init()` does not return
 under QEMU, so nothing downstream of it runs at all.
 
+### Gate: confirm the I2C pins before anything touches real hardware
+
+**Blocks hardware bring-up. Blocks nothing else** — every host test, the
+emulator job and the cooldown work below are unaffected, because none of them
+reach a physical bus.
+
+`SDA_PIN`/`SCL_PIN` in `main.rs` are Espressif's conventional S3 pairing, which
+is a good guess and not a schematic. Nothing in this repository is the
+schematic, so this cannot be closed from inside it.
+
+It is on the roadmap as a gate rather than a task because of what a wrong guess
+produces: **no answer on the bus, reported correctly as a hardware fault, on a
+device whose hardware is fine.** That is the least diagnosable failure this
+firmware has — the report is accurate, the advice ("hardware fault: the clock is
+absent, unpowered, or miswired") is reasonable, and it points away from the
+actual cause. Somebody would replace a working DS3231 before suspecting the
+constant.
+
+So the assumption is made to announce itself rather than sit in a comment:
+
+- The device **prints it at every boot**, before the first clock read, so it is
+  on screen whether or not the read succeeds.
+- `TODO(pins)` makes it greppable.
+- A CI step in the `firmware-nostd` job fails the build if the marker is present
+  while the boot line is gone, so it cannot quietly stop announcing itself.
+  Removing all three in one change is what confirming the pins looks like.
+
+**To close:** read the schematic, correct the two constants and the two
+`peripherals.GPIOn` arguments together, delete `PINS_UNCONFIRMED`, its boot line
+and the `TODO(pins)` marker.
+
 **Not done:**
 
 1. **Cooldown persistence**, above, which needs a time base that survives the
    reset and now has one.
-2. **Confirm the I2C pins against hardware**, and with them everything in
-   `NOSTD_ENTROPY_SPIKE.md`'s Status list that needs silicon.
+2. **Everything in `NOSTD_ENTROPY_SPIKE.md`'s Status list that needs silicon**,
+   which the pin gate above is now the first item of.
 
 **A rule the hardware does not enforce, so the code does.** D13 says the clock
 stores time and nothing else. It is tempting to treat that as closed by the part

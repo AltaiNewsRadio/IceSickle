@@ -98,15 +98,45 @@ const BUTTON_PIN: u8 = 0;
 
 /// I2C pins for the DS3231.
 ///
-/// **These are a board fact and they are not yet confirmed against a built
-/// unit.** GPIO8/GPIO9 is Espressif's conventional S3 pairing and what the
-/// devkit examples use, which makes it the right default and no more than that.
+/// **UNCONFIRMED. These are a guess with a good pedigree, not a board fact.**
+/// GPIO8/GPIO9 is Espressif's conventional S3 pairing and what the devkit
+/// examples use, which makes it the right default and no more than that. The
+/// schematic is what settles it, and nothing in this repository is the
+/// schematic.
+///
 /// They are named here, next to `BUTTON_PIN`, so that correcting them is one
 /// visible line rather than a hunt through `main` — but as with `BUTTON_PIN`,
 /// esp-hal pins are distinct types, so the constants label the peripherals
 /// taken below and the two have to be changed together.
+///
+/// # Why this is not just a comment
+///
+/// A doc comment saying "unconfirmed" is true the day it is written and skimmed
+/// past every day after. This assumption has to survive being *forgotten*, not
+/// merely being read, because the failure it produces is the least diagnosable
+/// one this firmware has: wrong pins give a clock that never answers, which is
+/// reported — correctly, and uselessly — as a hardware fault on a device where
+/// the hardware is fine.
+///
+/// So it announces itself three ways, and [`PINS_UNCONFIRMED`] is the one that
+/// matters: **the device says it out loud at every boot**, in front of whoever
+/// is holding a board the first time they power it on. `TODO(pins)` below makes
+/// it greppable, and a CI step fails the build if the marker is still here while
+/// the boot line is gone — so the assumption cannot quietly stop announcing
+/// itself. Removing all three together is what confirming the pins looks like.
+///
+/// TODO(pins): GPIO8/GPIO9 UNCONFIRMED — verify against the schematic before
+/// hardware bring-up, then delete `PINS_UNCONFIRMED` and its boot line.
 const SDA_PIN: u8 = 8;
 const SCL_PIN: u8 = 9;
+
+/// Printed at boot for as long as [`SDA_PIN`] and [`SCL_PIN`] are a guess.
+///
+/// Delete this constant and the `println!` that uses it in the same change that
+/// confirms the pins — not before, and not separately. Its whole value is that
+/// it is impossible to power on a unit without being told, so a build that has
+/// stopped saying it is claiming the pins are known.
+const PINS_UNCONFIRMED: &str = "note: I2C pins are UNCONFIRMED against the schematic";
 
 /// How often the button is sampled. Well inside the 50 ms debounce window, so
 /// no press can be slept through.
@@ -201,6 +231,11 @@ fn main() -> ! {
     .with_sda(peripherals.GPIO8)
     .with_scl(peripherals.GPIO9);
     let mut clock = Ds3231::new(i2c);
+
+    // Said before the first read, not after it, so it is on screen whether or
+    // not the read succeeds. Wrong pins and an absent part produce the identical
+    // symptom, and this is the line that tells the two apart.
+    println!("{PINS_UNCONFIRMED}: SDA=GPIO{SDA_PIN} SCL=GPIO{SCL_PIN}");
 
     // Read it once, now, so a dead cell is discovered at power-on rather than
     // at the moment somebody needs to attest. This read is a report and nothing
