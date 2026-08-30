@@ -3,8 +3,23 @@ name: CI
 on:
   push:
     branches: [main]
+  # `main` plus stacked branches.
+  #
+  # A PR based on another feature branch used to run nothing at all: the branch
+  # filter matches the PR's *base*, so a PR targeting `feat/...` fell through
+  # and only third-party checks reported.
+  #
+  # That gap is worst for exactly the work least verifiable elsewhere. The host
+  # crates build on stable and can be checked locally in seconds; the firmware
+  # needs the Xtensa toolchain, so for anyone without it this workflow is the
+  # only thing that ever compiles `firmware/nostd` -- and a stacked PR was
+  # therefore the one shape of change that could sit for days looking reviewed
+  # while never having been built. Reading an API is not compiling against it.
+  #
+  # The alternative was to rebase every stack onto `main` for CI, which trades a
+  # reviewable diff for a build. There is no reason to pay that.
   pull_request:
-    branches: [main]
+    branches: [main, "feat/**", "design/**", "docs/**", "test/**"]
 
 env:
   CARGO_TERM_COLOR: always
