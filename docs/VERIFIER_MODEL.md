@@ -38,9 +38,15 @@ anchoring** both presuppose that an attestation is evidence of something, and
 today it is not. Those claims should be softened or removed regardless of which
 design below we adopt.
 
-Also worth naming: `timestamp_ms` is milliseconds since boot. Across a power
-cycle it is meaningless, and to a third party it is meaningless from the start,
-because there is no anchor for what "boot" was.
+Also worth naming: `timestamp_ms` was milliseconds since boot — meaningless
+across a power cycle, and meaningless to a third party from the start, because
+nothing anchored what "boot" was.
+
+**D13 changes the field, not the conclusion.** The device has a battery-backed
+clock and the payload now carries Unix milliseconds, so it *is* comparable to a
+verifier's clock. It is still not evidence: a seized device can be set to any
+time, so the claim is an input to be anchored rather than an authority. What
+anchors it is §3.2 and §3.3 below, unchanged.
 
 ## 2. Why challenge-response is unavailable
 
@@ -130,8 +136,14 @@ counter-signs it with their own timestamp `T`. That proves the artifact existed
 by `T`. It says nothing about the device and requires nothing from it.
 
 Combined with the beacon, a verifier gets a real interval: **this attestation was
-created between `t` and `T`.** For a create-now/transmit-later device with no
-clock, that is about as good as time provenance gets.
+created between `t` and `T`.** For a create-now/transmit-later device whose own
+clock cannot be trusted, that is about as good as time provenance gets.
+
+D13 adds one rule here: an attestation claiming a time *later* than `T` is
+provably malformed and is rejected. That is free, and it is strictly the upper
+half — it cannot detect backdating, because unbounded latency makes a delayed
+attestation and a backdated one identical. The beacon is the only thing that
+closes the lower half.
 
 ## 4. Recommended shape
 

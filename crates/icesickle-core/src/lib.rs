@@ -1,9 +1,16 @@
 //! Platform-independent IceSickle device logic.
 //!
-//! Three things live here: the attestation itself, at the crate root; the
-//! debounced button state machine in [`button`]; and the rate limit in
-//! [`cooldown`]. They share one rule — **no hardware, and no clock of their
-//! own**. Every reading a decision depends on arrives as a parameter.
+//! The attestation itself lives at the crate root; the debounced button state
+//! machine is in [`button`], the rate limit in [`cooldown`], the DS3231 register
+//! codec in [`clock`], and the models for emission and power in [`emission`] and
+//! [`power`]. They share one rule — **no hardware, and no clock of their own**.
+//! Every reading a decision depends on arrives as a parameter.
+//!
+//! [`clock`] is not the exception it looks like. It decodes the bytes of a
+//! real-time clock without ever reading one: the firmware does the I2C
+//! transaction and passes the registers in, the same way it passes `now_ms` to
+//! [`cooldown`]. Keeping the seam there is what makes a part nobody here owns
+//! testable on a host that does not have one.
 //!
 //! [`auth`] is the exception: no code at all, only the constraint that keeps
 //! device identity out of this project. Read it before adding anything that
@@ -37,8 +44,10 @@
 
 pub mod auth;
 pub mod button;
+pub mod clock;
 pub mod cooldown;
 pub mod emission;
+pub mod power;
 
 use ed25519_dalek::{Signer, SigningKey};
 use serde::{Deserialize, Serialize};
@@ -83,8 +92,16 @@ pub enum AttestationEvent {
 pub struct AttestationPayload {
     pub version: u8,
     pub event: AttestationEvent,
-    /// Milliseconds since device boot. Meaningless to a third party without the
-    /// time-bounding described in `docs/VERIFIER_MODEL.md`.
+    /// Milliseconds since device boot.
+    ///
+    /// **v2 changes this to Unix milliseconds** (D13): the device has a
+    /// battery-backed clock, and the arrival check in `TOKEN_PROTOCOL.md` §6
+    /// step 8 needs a value comparable to a verifier's wall clock.
+    ///
+    /// Comparable is not the same as trusted. A seized device can be set to any
+    /// time, so this is an input to be anchored, never an authority — the
+    /// bounding in `docs/VERIFIER_MODEL.md` §3.2 and §3.3 is what carries the
+    /// weight.
     pub timestamp_ms: u64,
     /// Monotonic counter. Resets on power cycle.
     pub counter: u32,
